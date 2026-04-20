@@ -44,6 +44,11 @@ export function useEngine(canvasRef: React.RefObject<HTMLCanvasElement | null>):
     });
     renderRef.current = matterRender;
 
+    // Matter.js sets inline width/height styles which break responsive CSS.
+    // Override them so Tailwind's w-full can scale the canvas on small screens.
+    matterRender.canvas.style.width  = '100%';
+    matterRender.canvas.style.height = 'auto';
+
     // ── Runner ───────────────────────────────────────────────────────────────
     const runner = Matter.Runner.create();
     runnerRef.current = runner;

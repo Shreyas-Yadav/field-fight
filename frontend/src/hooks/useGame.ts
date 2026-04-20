@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Matter from 'matter-js';
 import { GamePhase } from '../types';
 import {
@@ -9,6 +9,7 @@ import {
 
 export interface GameControls {
   phase:                 GamePhase;
+  phaseRef:              React.MutableRefObject<GamePhase>;
   activePlayer:          0 | 1;
   hands:                 [number, number];
   winner:                0 | 1 | null;
@@ -57,6 +58,7 @@ export function useGame(
   activeMagnetsRef: React.MutableRefObject<Matter.Body[]>,
   spawnMagnet:      (x: number, y: number, owner: 0 | 1) => Matter.Body | null,
   removeBodies:     (bodies: Matter.Body[]) => void,
+  onRemove?:        (bodies: Matter.Body[]) => void,
 ): GameControls {
 
   // ── Phase ─────────────────────────────────────────────────────────────────
@@ -104,6 +106,7 @@ export function useGame(
       );
       if (cluster.length > 1) {
         removeBodies(cluster);
+        onRemove?.(cluster);
         penalty = cluster.length;
       }
     }
@@ -219,5 +222,5 @@ export function useGame(
     setWinner(null);
   }, []);
 
-  return { phase, activePlayer, hands, winner, placeForActivePlayer, resetGame };
+  return { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame };
 }

@@ -11,9 +11,11 @@ export interface MagnetControls {
   activeMagnetsRef: React.MutableRefObject<Matter.Body[]>;
   magnetCount:      number;
   /** Spawn a magnet at (x, y) owned by player 0 or 1. Returns the created body. */
-  spawnMagnet:   (x: number, y: number, owner: 0 | 1) => Matter.Body | null;
-  removeBodies:  (bodies: Matter.Body[]) => void;
-  resetMagnets:  () => void;
+  spawnMagnet:    (x: number, y: number, owner: 0 | 1) => Matter.Body | null;
+  removeBodies:   (bodies: Matter.Body[]) => void;
+  resetMagnets:   () => void;
+  /** Snap bodies to authoritative positions from the remote player. */
+  snapPositions:  (positions: { id: number; x: number; y: number }[]) => void;
 }
 
 export function useMagnets(
@@ -68,7 +70,31 @@ export function useMagnets(
     setMagnetCount(0);
   }, [engineRef]);
 
-  return { activeMagnetsRef, magnetCount, spawnMagnet, removeBodies, resetMagnets };
+  const snapPositions = useCallback((positions: { id: number; x: number; y: number }[]) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    // Remove any local bodies that the authority client no longer has
+    const syncedIds = new Set(positions.map(p => p.id));
+    const stale = activeMagnetsRef.current.filter(b => !syncedIds.has(b.id));
+    if (stale.length > 0) {
+      for (const b of stale) Matter.Composite.remove(engine.world, b);
+      activeMagnetsRef.current = activeMagnetsRef.current.filter(b => syncedIds.has(b.id));
+      setMagnetCount(activeMagnetsRef.current.length);
+    }
+
+    // Snap surviving bodies to authoritative positions and zero out velocity
+    for (const pos of positions) {
+      const body = activeMagnetsRef.current.find(b => b.id === pos.id);
+      if (body) {
+        Matter.Body.setPosition(body, { x: pos.x, y: pos.y });
+        Matter.Body.setVelocity(body, { x: 0, y: 0 });
+        Matter.Body.setAngularVelocity(body, 0);
+      }
+    }
+  }, [engineRef, activeMagnetsRef]);
+
+  return { activeMagnetsRef, magnetCount, spawnMagnet, removeBodies, resetMagnets, snapPositions };
 }
 
 // Safe spawn point inside the top half of the arena (used by App for testing)

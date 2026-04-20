@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1776716153697,
+    "winner": 0,
+    "game_mode": "human-vs-human",
+    "p0_moves": 10,
+    "p1_moves": 7,
+    "created_at": "2026-04-20T20:15:53.697Z"
+  },
+  {
+    "id": 1776716596913,
+    "winner": 0,
+    "game_mode": "remote",
+    "p0_moves": 10,
+    "p1_moves": 4,
+    "created_at": "2026-04-20T20:23:16.913Z"
+  },
+  {
+    "id": 1776716596921,
+    "winner": 0,
+    "game_mode": "remote",
+    "p0_moves": 10,
+    "p1_moves": 4,
+    "created_at": "2026-04-20T20:23:16.921Z"
+  }
+]
