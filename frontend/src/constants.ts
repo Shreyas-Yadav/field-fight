@@ -21,11 +21,11 @@ export const DEFAULT_FIELD_RADIUS = 150;
 
 // Game
 export const HAND_SIZE = 10;
-export const PLAYER_COLORS: [string, string] = ['#e63946', '#457b9d'];
+export const PLAYER_COLORS: [string, string] = ['#ff4455', '#00d4ff'];
+export const PLAYER_UIDS: [string, string] = ['P-01', 'P-02'];
 
 // Sleep detection — turn ends when all bodies are slow for this many consecutive frames
 export const SLEEP_SPEED_THRESHOLD     = 0.5;  // px / frame
 export const SLEEP_CONSECUTIVE_FRAMES  = 40;   // ~0.67 s at 60 fps
 
-// Magnet colors — indexed by owner (0 | 1)
 export const MAGNET_COLORS = PLAYER_COLORS;

@@ -1,5 +1,5 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { DEFAULT_FIELD_RADIUS, DEFAULT_STRENGTH } from '../constants';
 import { GameMode } from '../types';
 
 interface Props {
@@ -19,89 +19,95 @@ export function Controls({
   const isRemote = gameMode === 'remote';
 
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-[#161b22] border border-[#30363d] rounded-xl px-5 py-3 w-full max-w-[820px]">
-
-      {/* New Game / Leave Game */}
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 18, padding: '9px 22px',
+      background: 'rgba(7,9,13,0.92)', border: '1px solid rgba(200,169,110,.16)',
+      borderRadius: 3, whiteSpace: 'nowrap', flexShrink: 0,
+      flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 820,
+    }}>
       {!isRemote && (
-        <button
-          className="font-mono text-xs font-semibold px-4 py-1.5 rounded-md border border-[#30363d] bg-[#21262d] text-[#c9d1d9] cursor-pointer hover:bg-[#30363d] transition-colors"
-          onClick={onReset}
-        >
-          New Game
-        </button>
+        <TBtn onClick={onReset}>↺ NEW MISSION</TBtn>
       )}
-
       {isRemote && !leaveConfirm && (
-        <button
-          className="font-mono text-xs font-semibold px-4 py-1.5 rounded-md border border-[#f8514955] bg-[#f8514911] text-[#f85149] cursor-pointer hover:bg-[#f8514922] transition-colors"
-          onClick={() => setLeaveConfirm(true)}
-        >
-          Leave Game
-        </button>
+        <TBtn danger onClick={() => setLeaveConfirm(true)}>⎋ ABORT</TBtn>
       )}
-
       {isRemote && leaveConfirm && (
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-[#8b949e]">Leave?</span>
-          <button
-            className="font-mono text-xs font-semibold px-3 py-1 rounded-md border border-[#f8514955] bg-[#f8514922] text-[#f85149] cursor-pointer"
-            onClick={() => { setLeaveConfirm(false); onLeaveGame?.(); }}
-          >
-            Yes
-          </button>
-          <button
-            className="font-mono text-xs font-semibold px-3 py-1 rounded-md border border-[#30363d] bg-[#21262d] text-[#c9d1d9] cursor-pointer"
-            onClick={() => setLeaveConfirm(false)}
-          >
-            Cancel
-          </button>
-        </div>
+        <>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 12,
+            color: 'var(--text-muted)', letterSpacing: '.15em',
+          }}>
+            ABANDON?
+          </span>
+          <TBtn danger onClick={() => { setLeaveConfirm(false); onLeaveGame?.(); }}>YES</TBtn>
+          <TBtn onClick={() => setLeaveConfirm(false)}>NO</TBtn>
+        </>
       )}
 
-      {/* Sliders */}
-      <SliderControl
-        label="Magnetic Strength"
-        id="strength"
-        min={1} max={200} step={1}
-        value={strength}
-        defaultValue={DEFAULT_STRENGTH}
-        onChange={onStrengthChange}
-      />
+      <Divider />
 
-      <SliderControl
-        label="Field Radius"
-        id="field-radius"
-        min={50} max={300} step={10}
-        value={fieldRadius}
-        defaultValue={DEFAULT_FIELD_RADIUS}
-        onChange={onFieldRadiusChange}
-      />
+      {[
+        { label: 'FORCE',  min: 1,  max: 200, step: 1,  val: strength,    fn: onStrengthChange },
+        { label: 'RADIUS', min: 50, max: 300, step: 10, val: fieldRadius,  fn: onFieldRadiusChange },
+      ].map(s => (
+        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 11,
+            letterSpacing: '.16em', color: 'var(--text-dim)',
+          }}>
+            {s.label}
+          </span>
+          <input
+            type="range" min={s.min} max={s.max} step={s.step} value={s.val}
+            onChange={e => s.fn(Number(e.target.value))}
+            style={{ width: 88 }}
+          />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--gold)',
+            minWidth: 28, textAlign: 'right',
+          }}>
+            {s.val}
+          </span>
+        </div>
+      ))}
+
+      <Divider />
+
+      {/* Status dots */}
+      <div style={{ display: 'flex', gap: 5 }}>
+        {[0.2, 0.45, 0.75].map((o, i) => (
+          <div key={i} style={{
+            width: 5, height: 5, borderRadius: '50%',
+            background: `rgba(200,169,110,${o})`,
+          }} />
+        ))}
+      </div>
     </div>
   );
 }
 
-interface SliderProps {
-  label: string; id: string;
-  min: number; max: number; step: number;
-  value: number; defaultValue: number;
-  onChange: (v: number) => void;
+function TBtn({ children, onClick, danger }: { children: ReactNode; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.16em',
+        textTransform: 'uppercase', padding: '7px 16px', borderRadius: 2,
+        cursor: 'pointer', transition: 'all .2s',
+        background: danger ? 'rgba(255,68,85,.12)' : 'rgba(200,169,110,.10)',
+        border: `1px solid ${danger ? 'rgba(255,68,85,.4)' : 'rgba(200,169,110,.3)'}`,
+        color: danger ? 'var(--player-0)' : 'var(--gold)',
+      }}
+      onMouseEnter={e  => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.35)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = ''; }}
+    >
+      {children}
+    </button>
+  );
 }
 
-function SliderControl({ label, id, min, max, step, value, onChange }: SliderProps) {
+function Divider() {
   return (
-    <div className="flex items-center gap-2">
-      <label htmlFor={id} className="font-mono text-xs text-[#8b949e] whitespace-nowrap">
-        {label}
-      </label>
-      <input
-        id={id} type="range"
-        min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        className="w-28"
-      />
-      <span className="font-mono text-[11px] text-[#58a6ff] min-w-[28px] text-right">
-        {value}
-      </span>
-    </div>
+    <div style={{ width: 1, height: 22, background: 'rgba(200,169,110,.15)', flexShrink: 0 }} />
   );
 }

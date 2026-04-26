@@ -29,3 +29,12 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+
+#Dev Tools
+.pids/
+.playwright-mcp/*
+
+
+# temp DB JSON files
+leaderboard-api/scores.json

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { CANVAS_W, CANVAS_H, DEFAULT_STRENGTH, DEFAULT_FIELD_RADIUS, PLAYER_COLORS, HAND_SIZE } from './constants';
+import {
+  CANVAS_W, CANVAS_H, DEFAULT_STRENGTH, DEFAULT_FIELD_RADIUS,
+  PLAYER_COLORS, PLAYER_UIDS, HAND_SIZE,
+} from './constants';
 import { GamePhase, GameMode, ScoreRow } from './types';
 import { useEngine }        from './hooks/useEngine';
 import { useMagnets }       from './hooks/useMagnets';
@@ -16,18 +19,14 @@ import { PlayerPanel }      from './components/PlayerPanel';
 
 type RemoteStep = 'menu' | 'creating' | 'joining' | null;
 
-function modeLabel(mode: string) {
-  if (mode === 'human-vs-bot') return 'vs Bot';
-  if (mode === 'remote')       return 'Remote';
-  return 'Local';
-}
-
 export default function App() {
   // ── Mode & game ───────────────────────────────────────────────────────────
-  const [gameMode,    setGameMode]    = useState<GameMode>('human-vs-human');
-  const [gameStarted, setGameStarted] = useState(false);
-  const gameStartedRef  = useRef(false); // E6: sync ref for AI guard
-  const myTurnPending   = useRef(false); // true while waiting for MY placement to settle
+  const [booting,      setBooting]      = useState(true);
+  const [gameMode,     setGameMode]     = useState<GameMode>('human-vs-human');
+  const [gameStarted,  setGameStarted]  = useState(false);
+  const [arenaSize,    setArenaSize]    = useState(580);
+  const gameStartedRef = useRef(false);
+  const myTurnPending  = useRef(false);
 
   // ── Remote state ──────────────────────────────────────────────────────────
   const [socket,           setSocket]           = useState<Socket | null>(null);
@@ -47,7 +46,7 @@ export default function App() {
   const strengthRef    = useRef<number>(DEFAULT_STRENGTH);
   const fieldRadiusRef = useRef<number>(DEFAULT_FIELD_RADIUS);
 
-  const handleStrengthChange = useCallback((v: number) => { strengthRef.current = v; setStrength(v); }, []);
+  const handleStrengthChange    = useCallback((v: number) => { strengthRef.current = v;    setStrength(v);    }, []);
   const handleFieldRadiusChange = useCallback((v: number) => { fieldRadiusRef.current = v; setFieldRadius(v); }, []);
 
   // ── Canvas / physics ──────────────────────────────────────────────────────
@@ -64,7 +63,21 @@ export default function App() {
 
   const { getAIMove } = useAI(activeMagnetsRef);
 
-  // ── AI trigger (E6: use ref to avoid double-fire) ─────────────────────────
+  // ── Responsive arena size ─────────────────────────────────────────────────
+  useEffect(() => {
+    const calc = () => {
+      const avail = gameStartedRef.current
+        ? window.innerWidth  - 200 * 2 - 20 * 4 - 40
+        : window.innerWidth  - 40;
+      const maxH = window.innerHeight - 130;
+      setArenaSize(Math.max(300, Math.min(avail, maxH)));
+    };
+    calc();
+    window.addEventListener('resize', calc);
+    return () => window.removeEventListener('resize', calc);
+  }, [gameStarted]);
+
+  // ── AI trigger ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (
       gameMode !== 'human-vs-bot' ||
@@ -87,15 +100,14 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        winner,
-        gameMode,
+        winner, gameMode,
         p0Moves: HAND_SIZE - hands[0],
         p1Moves: HAND_SIZE - hands[1],
       }),
     }).catch(() => {});
   }, [phase, winner]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Leaderboard: fetch top 5 when win overlay opens ───────────────────────
+  // ── Leaderboard: fetch on win ──────────────────────────────────────────────
   useEffect(() => {
     if (phase !== GamePhase.WIN) return;
     fetch('/api/scores?limit=5')
@@ -104,11 +116,10 @@ export default function App() {
       .catch(() => {});
   }, [phase]);
 
-  // ── State sync: emit authoritative positions after my turn settles ────────
+  // ── State sync: emit after my turn settles ────────────────────────────────
   useEffect(() => {
     if (!myTurnPending.current) return;
     if (phase !== GamePhase.WAITING || gameMode !== 'remote' || !socket) return;
-
     myTurnPending.current = false;
     const positions = activeMagnetsRef.current.map(b => ({
       id: b.id, x: b.position.x, y: b.position.y,
@@ -116,14 +127,12 @@ export default function App() {
     socket.emit('sync_state', { positions });
   }, [phase, gameMode, socket, activeMagnetsRef]);
 
-  // ── State sync: receive and apply opponent's authoritative positions ───────
+  // ── State sync: receive opponent positions ────────────────────────────────
   useEffect(() => {
     if (!socket || gameMode !== 'remote') return;
-
     const onStateSync = ({ positions }: { positions: { id: number; x: number; y: number }[] }) => {
       snapPositions(positions);
     };
-
     socket.on('state_sync', onStateSync);
     return () => { socket.off('state_sync', onStateSync); };
   }, [socket, gameMode, snapPositions]);
@@ -131,7 +140,6 @@ export default function App() {
   // ── Socket: persistent listeners ─────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
-
     const onGameStart = ({ playerIndex: pi }: { playerIndex: 0 | 1 }) => {
       setPlayerIndex(pi);
       gameStartedRef.current = true;
@@ -139,12 +147,7 @@ export default function App() {
       setRemoteStep(null);
       setRemoteError('');
     };
-
-    // E3: show notice instead of silently resetting
-    const onOpponentDisconnected = () => {
-      setDisconnectNotice(true);
-    };
-
+    const onOpponentDisconnected = () => setDisconnectNotice(true);
     socket.on('game_start', onGameStart);
     socket.on('opponent_disconnected', onOpponentDisconnected);
     return () => {
@@ -153,15 +156,13 @@ export default function App() {
     };
   }, [socket]);
 
-  // ── Socket: relay opponent moves (E4: guard with phaseRef) ────────────────
+  // ── Socket: relay opponent moves ──────────────────────────────────────────
   useEffect(() => {
     if (!socket || gameMode !== 'remote') return;
-
     const onOpponentPlaced = ({ x, y }: { x: number; y: number }) => {
-      if (phaseRef.current !== GamePhase.WAITING) return; // E4
+      if (phaseRef.current !== GamePhase.WAITING) return;
       placeForActivePlayer(x, y);
     };
-
     socket.on('opponent_placed', onOpponentPlaced);
     return () => { socket.off('opponent_placed', onOpponentPlaced); };
   }, [socket, gameMode, phaseRef, placeForActivePlayer]);
@@ -199,261 +200,715 @@ export default function App() {
     setJoinInput('');
   }, [socket]);
 
-  // ── Return to lobby after opponent disconnect ─────────────────────────────
   const handleReturnToLobby = useCallback(() => {
-    resetMagnets();
-    resetGame();
+    resetMagnets(); resetGame();
     socket?.disconnect();
-    setSocket(null);
-    setPlayerIndex(null);
-    setRoomId('');
-    setRemoteStep('menu');
-    setDisconnectNotice(false);
-    setRemoteError('');
-    setJoinInput('');
-    gameStartedRef.current = false;
-    setGameStarted(false);
-    setScores([]);
+    setSocket(null); setPlayerIndex(null); setRoomId('');
+    setRemoteStep('menu'); setDisconnectNotice(false); setRemoteError(''); setJoinInput('');
+    gameStartedRef.current = false; setGameStarted(false); setScores([]);
   }, [resetMagnets, resetGame, socket]);
 
-  // ── Leave game (remote, mid-game) ─────────────────────────────────────────
   const handleLeaveGame = useCallback(() => {
-    resetMagnets();
-    resetGame();
+    resetMagnets(); resetGame();
     socket?.disconnect();
-    setSocket(null);
-    setPlayerIndex(null);
-    setRoomId('');
-    setRemoteStep('menu');
-    setDisconnectNotice(false);
-    setRemoteError('');
-    setJoinInput('');
-    gameStartedRef.current = false;
-    setGameStarted(false);
-    setScores([]);
+    setSocket(null); setPlayerIndex(null); setRoomId('');
+    setRemoteStep('menu'); setDisconnectNotice(false); setRemoteError(''); setJoinInput('');
+    gameStartedRef.current = false; setGameStarted(false); setScores([]);
   }, [resetMagnets, resetGame, socket]);
 
-  // ── Reset (local modes / play again) ─────────────────────────────────────
   const handleReset = useCallback(() => {
-    resetMagnets();
-    resetGame();
-    setScores([]); // E9: clear stale scores
+    resetMagnets(); resetGame(); setScores([]);
     if (gameMode === 'remote') {
       socket?.disconnect();
-      setSocket(null);
-      setPlayerIndex(null);
-      setRoomId('');
-      setRemoteStep(null);
-      setRemoteError('');
-      setJoinInput('');
+      setSocket(null); setPlayerIndex(null); setRoomId('');
+      setRemoteStep(null); setRemoteError(''); setJoinInput('');
       setDisconnectNotice(false);
     }
-    gameStartedRef.current = false;
-    setGameStarted(false);
+    gameStartedRef.current = false; setGameStarted(false);
   }, [resetMagnets, resetGame, gameMode, socket]);
 
-  // ── Canvas click/touch handler ────────────────────────────────────────────
+  // ── Canvas placement handler ──────────────────────────────────────────────
   const handleCanvasPlace = useCallback((clientX: number, clientY: number, target: HTMLCanvasElement) => {
     if (phase !== GamePhase.WAITING) return;
     if (gameMode === 'human-vs-bot' && activePlayer === 1) return;
     if (gameMode === 'remote' && activePlayer !== playerIndex) return;
 
-    const rect   = target.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
     const x = (clientX - rect.left) * (CANVAS_W / rect.width);
     const y = (clientY - rect.top)  * (CANVAS_H / rect.height);
 
     if (gameMode === 'remote' && socket) {
       socket.emit('place_magnet', { x, y });
-      myTurnPending.current = true; // I placed — I'll emit authoritative positions on settle
+      myTurnPending.current = true;
     }
     placeForActivePlayer(x, y);
   }, [phase, gameMode, activePlayer, playerIndex, socket, placeForActivePlayer]);
 
-  // ── Banner text ───────────────────────────────────────────────────────────
+  // ── Derived state ─────────────────────────────────────────────────────────
   const isMyRemoteTurn = gameMode === 'remote' && activePlayer === playerIndex;
   const isBotTurn      = gameMode === 'human-vs-bot' && activePlayer === 1;
-  const bannerText: Record<GamePhase, string> = {
-    [GamePhase.WAITING]:    isBotTurn ? 'Bot is thinking…'
-      : gameMode === 'remote' && !isMyRemoteTurn ? 'Waiting for opponent…'
-      : `Player ${activePlayer + 1} — click inside the arena to place`,
-    [GamePhase.SIMULATING]: 'Simulating…',
-    [GamePhase.CHECKING]:   'Checking collisions…',
-    [GamePhase.WIN]:        winner !== null ? `Player ${winner + 1} wins! 🎉` : '',
-  };
-  const bannerColor = phase === GamePhase.WIN && winner !== null
-    ? PLAYER_COLORS[winner]
+
+  const statusText =
+    phase === GamePhase.WIN && winner !== null
+      ? `UNIT ${PLAYER_UIDS[winner]} — MISSION COMPLETE`
+    : phase === GamePhase.SIMULATING
+      ? 'MAGNETIC FIELD ACTIVE — TRACKING ASSETS'
+    : phase === GamePhase.CHECKING
+      ? 'SCANNING COLLISION MATRIX…'
+    : isBotTurn
+      ? 'AI COMPUTING OPTIMAL TRAJECTORY…'
+    : gameMode === 'remote' && !isMyRemoteTurn
+      ? 'AWAITING REMOTE UNIT…'
+    : `UNIT ${PLAYER_UIDS[activePlayer]} — DEPLOY MAGNETIC ASSET`;
+
+  const statusColor = phase === GamePhase.WIN
+    ? 'var(--gold)'
     : PLAYER_COLORS[activePlayer];
 
+  const canvasBoxShadow = phase === GamePhase.WIN
+    ? `0 0 0 2px var(--gold), 0 0 50px 8px rgba(200,169,110,.3), 0 0 100px 20px rgba(200,169,110,.1)`
+    : activePlayer === 0
+      ? `0 0 0 2px var(--player-0), 0 0 50px 8px var(--player-0-glow), 0 0 100px 20px rgba(255,68,85,.06)`
+      : `0 0 0 2px var(--player-1), 0 0 50px 8px var(--player-1-glow), 0 0 100px 20px rgba(0,212,255,.06)`;
+
+  const modeTag = gameMode === 'human-vs-bot' ? 'VS AI' : gameMode === 'remote' ? 'REMOTE OPS' : 'LOCAL DUEL';
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col items-center min-h-screen px-4 py-6 gap-4 bg-[#0d1117] font-mono text-[#c9d1d9]">
-      <h1 className="text-lg font-semibold text-[#e6edf3] tracking-widest">Magnet Arena</h1>
+    <>
+      {booting && <BootScreen onDone={() => setBooting(false)} />}
+      <PhaseFlash phase={phase} />
 
-      {/* Status banner */}
-      {gameStarted && (
-        <div
-          className="text-xs font-semibold px-4 py-1.5 rounded-md border tracking-wide transition-colors duration-200 min-h-[30px] flex items-center"
-          style={{ color: bannerColor, borderColor: bannerColor + '44' }}
-        >
-          {bannerText[phase]}
-        </div>
-      )}
+      {/* ── Full-viewport game layout ──────────────────────────────────── */}
+      <div style={{
+        width: '100vw', height: '100vh', position: 'relative', zIndex: 1,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'space-between', padding: '12px 20px 10px',
+      }}>
 
-      {/* Main layout */}
-      <div className="flex flex-col md:flex-row items-center md:items-start gap-4 w-full max-w-[860px] justify-center">
-
-        {/* Desktop: player 0 panel (left) */}
-        {gameStarted && (
-          <div className="hidden md:block">
-            <PlayerPanel player={0} handCount={hands[0]} phase={phase} activePlayer={activePlayer}
-              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 0} />
-          </div>
-        )}
-
-        {/* Canvas column */}
-        <div className="flex flex-col items-center gap-3 w-full md:w-auto order-1">
-          <div className="relative rounded-xl overflow-hidden border border-[#30363d] shadow-2xl w-full max-w-[620px]"
-            style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
-            <SimCanvas canvasRef={canvasRef} onPlace={handleCanvasPlace} />
-
-            {/* Mode picker / remote lobby overlay */}
-            {!gameStarted && (
-              <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-5">
-                {remoteStep === null && (
-                  <>
-                    <span className="font-mono text-base font-semibold text-[#c9d1d9] tracking-wide">Choose a game mode</span>
-                    <button className={btnCls('primary')} onClick={() => { setGameMode('human-vs-human'); gameStartedRef.current = true; setGameStarted(true); }}>
-                      Human vs Human
-                    </button>
-                    <button className={btnCls('secondary')} onClick={() => { setGameMode('human-vs-bot'); gameStartedRef.current = true; setGameStarted(true); }}>
-                      Human vs Bot
-                    </button>
-                    <button className={btnCls('green')} onClick={() => { setGameMode('remote'); setRemoteStep('menu'); }}>
-                      Remote Play
-                    </button>
-                  </>
-                )}
-
-                {remoteStep === 'menu' && (
-                  <>
-                    <span className="font-mono text-base font-semibold text-[#c9d1d9] tracking-wide">Remote Play</span>
-                    {remoteError && <span className="font-mono text-xs text-[#f85149]">{remoteError}</span>}
-                    <button className={btnCls('primary')} onClick={handleCreateRoom}>Create Room</button>
-                    <button className={btnCls('secondary')} onClick={() => { setRemoteStep('joining'); setRemoteError(''); }}>Join Room</button>
-                    <button className={btnCls('ghost')} onClick={() => { setGameMode('human-vs-human'); setRemoteStep(null); setRemoteError(''); }}>← Back</button>
-                  </>
-                )}
-
-                {remoteStep === 'creating' && (
-                  <>
-                    <span className="font-mono text-base font-semibold text-[#c9d1d9]">Waiting for opponent</span>
-                    <span className="font-mono text-xs text-[#8b949e]">Share this room code:</span>
-                    <span className="font-mono text-4xl md:text-5xl font-bold tracking-[0.18em] text-[#58a6ff]">{roomId}</span>
-                    <button className={btnCls('ghost')} onClick={handleCancelRemote}>Cancel</button>
-                  </>
-                )}
-
-                {remoteStep === 'joining' && (
-                  <>
-                    <span className="font-mono text-base font-semibold text-[#c9d1d9]">Join Room</span>
-                    <input
-                      className="font-mono text-xl font-bold tracking-[0.12em] uppercase text-center w-40 px-3 py-2 bg-[#161b22] border border-[#30363d] rounded-md text-[#e6edf3] outline-none focus:border-[#58a6ff]"
-                      placeholder="Room code"
-                      value={joinInput}
-                      maxLength={6}
-                      onChange={e => { setJoinInput(e.target.value.toUpperCase()); setRemoteError(''); }}
-                      onKeyDown={e => e.key === 'Enter' && handleJoinRoom()}
-                    />
-                    {remoteError && <span className="font-mono text-xs text-[#f85149]">{remoteError}</span>}
-                    <button className={btnCls('primary')} onClick={handleJoinRoom}>Join</button>
-                    <button className={btnCls('ghost')} onClick={() => { setRemoteStep('menu'); setRemoteError(''); setJoinInput(''); }}>← Back</button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Opponent disconnected notice (E3) */}
-            {disconnectNotice && (
-              <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-5">
-                <span className="font-mono text-lg font-bold text-[#e3b341]">⚠ Opponent disconnected</span>
-                <span className="font-mono text-xs text-[#8b949e]">Your last board state is preserved.</span>
-                <button className={btnCls('primary')} onClick={handleReturnToLobby}>Return to lobby</button>
-              </div>
-            )}
-
-            {/* Win overlay */}
-            {phase === GamePhase.WIN && winner !== null && !disconnectNotice && (
-              <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-5">
-                <span className="font-mono text-4xl md:text-5xl font-bold tracking-wide" style={{ color: PLAYER_COLORS[winner] }}>
-                  {gameMode === 'remote' && winner === playerIndex ? 'You win! 🎉'
-                    : gameMode === 'remote' ? 'Opponent wins'
-                    : `Player ${winner + 1} wins!`}
-                </span>
-                <button className={btnCls('primary')} onClick={handleReset}>Play again</button>
-
-                {scores.length > 0 && (
-                  <div className="flex flex-col gap-1.5 w-56 bg-[#0d1117cc] border border-[#21262d] rounded-lg p-3">
-                    <span className="font-mono text-[10px] font-bold tracking-[0.08em] text-[#8b949e] uppercase mb-1">Recent Games</span>
-                    {scores.map(s => (
-                      <div key={s.id} className="flex justify-between items-center gap-2">
-                        <span className="font-mono text-[11px] text-[#8b949e] min-w-[46px]">{modeLabel(s.game_mode)}</span>
-                        <span className="font-mono text-[11px] text-[#c9d1d9] flex-1 text-center">{s.p0_moves + s.p1_moves} moves</span>
-                        <span className="font-mono text-[11px] font-bold min-w-[40px] text-right" style={{ color: PLAYER_COLORS[s.winner] }}>
-                          P{s.winner + 1} won
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+        {/* ── Top row: logo · status · mode tag ─────────────────────── */}
+        <div style={{
+          width: '100%', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', gap: 16, flexShrink: 0,
+        }}>
+          {/* Logo */}
+          <div>
+            <div style={{
+              fontFamily: 'var(--font-display)', fontSize: 28, letterSpacing: '.26em', lineHeight: 1,
+              color: 'var(--gold)', textShadow: '0 0 20px rgba(200,169,110,.45)',
+            }}>
+              MAGNET ARENA
+            </div>
+            <div style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.38em',
+              color: 'var(--text-dim)', marginTop: 1,
+            }}>
+              TACTICAL MAGNETIC COMBAT
+            </div>
           </div>
 
-          {/* Mobile: both player panels in a row below the canvas */}
+          {/* Status bar */}
           {gameStarted && (
-            <div className="flex md:hidden flex-row gap-3 w-full justify-center">
-              <PlayerPanel player={0} handCount={hands[0]} phase={phase} activePlayer={activePlayer}
-                isRemoteOpponent={gameMode === 'remote' && playerIndex !== 0} />
-              <PlayerPanel player={1} handCount={hands[1]} phase={phase} activePlayer={activePlayer}
-                isBot={gameMode === 'human-vs-bot'}
-                isRemoteOpponent={gameMode === 'remote' && playerIndex !== 1} />
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '7px 18px',
+              background: 'rgba(7,9,13,0.92)', border: `1px solid ${statusColor}33`,
+              borderRadius: 3, whiteSpace: 'nowrap', flexShrink: 0,
+            }}>
+              <div style={{ width: 7, height: 7, borderRadius: 2, background: statusColor, boxShadow: `0 0 10px ${statusColor}`, flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.18em', color: statusColor }}>
+                {statusText}
+              </span>
+              <div style={{ width: 7, height: 7, borderRadius: 2, background: statusColor, boxShadow: `0 0 10px ${statusColor}`, flexShrink: 0 }} />
+            </div>
+          )}
+
+          {/* Mode tag */}
+          {gameStarted && (
+            <div style={{
+              fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.2em',
+              color: 'var(--gold)', background: 'rgba(200,169,110,.1)',
+              border: '1px solid rgba(200,169,110,.28)', padding: '5px 14px',
+              borderRadius: 2, flexShrink: 0,
+            }}>
+              {modeTag}
             </div>
           )}
         </div>
 
-        {/* Desktop: player 1 panel (right) */}
-        {gameStarted && (
-          <div className="hidden md:block">
-            <PlayerPanel player={1} handCount={hands[1]} phase={phase} activePlayer={activePlayer}
-              isBot={gameMode === 'human-vs-bot'}
-              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 1} />
+        {/* ── Middle row: HUD · Arena · HUD ─────────────────────────── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 20, flex: 1, width: '100%', overflow: 'hidden', padding: '8px 0',
+        }}>
+          {gameStarted && (
+            <PlayerPanel player={0} handCount={hands[0]} phase={phase}
+              activePlayer={activePlayer} isBot={false}
+              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 0} />
+          )}
+
+          {/* Arena wrapper */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              width: arenaSize, height: arenaSize,
+              borderRadius: 4, overflow: 'hidden',
+              boxShadow: canvasBoxShadow, transition: 'box-shadow .5s',
+            }}>
+              <SimCanvas canvasRef={canvasRef} onPlace={handleCanvasPlace} />
+            </div>
+
+            {/* Win overlay */}
+            {phase === GamePhase.WIN && winner !== null && !disconnectNotice && (
+              <WinOverlay
+                winner={winner} gameMode={gameMode} playerIndex={playerIndex}
+                scores={scores} onPlayAgain={handleReset}
+              />
+            )}
+
+            {/* Disconnect notice */}
+            {disconnectNotice && (
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', background: 'rgba(4,6,10,0.92)', zIndex: 30,
+              }}>
+                <div className="animate-enter" style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+                  padding: '32px 40px', background: 'rgba(10,14,22,0.99)',
+                  border: '1px solid rgba(200,169,110,.3)', borderRadius: 3, position: 'relative',
+                }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 48, color: 'var(--gold)', lineHeight: 1, letterSpacing: '.2em' }}>!</div>
+                  <div style={{ fontFamily: 'var(--font-body)', fontSize: 20, fontWeight: 600, letterSpacing: '.25em', color: 'var(--gold)' }}>
+                    LINK SEVERED
+                  </div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', letterSpacing: '.1em', textAlign: 'center' }}>
+                    Remote unit disconnected
+                  </div>
+                  <TactBtn onClick={handleReturnToLobby}>↺ RETURN TO LOBBY</TactBtn>
+                </div>
+              </div>
+            )}
           </div>
+
+          {gameStarted && (
+            <PlayerPanel player={1} handCount={hands[1]} phase={phase}
+              activePlayer={activePlayer} isBot={gameMode === 'human-vs-bot'}
+              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 1} />
+          )}
+        </div>
+
+        {/* ── Controls dock ─────────────────────────────────────────── */}
+        {gameStarted && (
+          <Controls
+            strength={strength} fieldRadius={fieldRadius}
+            onStrengthChange={handleStrengthChange}
+            onFieldRadiusChange={handleFieldRadiusChange}
+            onReset={handleReset} gameMode={gameMode} onLeaveGame={handleLeaveGame}
+          />
         )}
       </div>
 
-      {/* Controls */}
-      {gameStarted && (
-        <Controls
-          strength={strength}
-          fieldRadius={fieldRadius}
-          onStrengthChange={handleStrengthChange}
-          onFieldRadiusChange={handleFieldRadiusChange}
-          onReset={handleReset}
-          gameMode={gameMode}
-          onLeaveGame={handleLeaveGame}
-        />
+      {/* ── Lobby full-screen overlay ──────────────────────────────────── */}
+      {!gameStarted && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', gap: 24, background: 'rgba(5,7,12,0.94)',
+        }}>
+          {/* Decorative rings */}
+          <div style={{ position: 'absolute', width: 400, height: 400, borderRadius: '50%',
+            border: '1px solid rgba(200,169,110,0.1)', pointerEvents: 'none',
+            boxShadow: '0 0 80px 10px rgba(200,169,110,0.05)' }} />
+          <div style={{ position: 'absolute', width: 560, height: 560, borderRadius: '50%',
+            border: '1px dashed rgba(200,169,110,0.06)', pointerEvents: 'none' }} />
+
+          {/* Title block */}
+          <div style={{ textAlign: 'center', zIndex: 1 }}>
+            <div style={{
+              fontFamily: 'var(--font-display)', fontSize: 52, letterSpacing: '.32em', lineHeight: 1,
+              color: 'var(--gold)', textShadow: '0 0 30px rgba(200,169,110,.5)',
+            }}>
+              MAGNET ARENA
+            </div>
+            <div style={{
+              fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.48em',
+              color: 'var(--text-dim)', marginTop: 8,
+            }}>
+              TACTICAL MAGNETIC COMBAT
+            </div>
+          </div>
+
+          {/* Separator */}
+          <div style={{
+            width: 320, height: 1, zIndex: 1,
+            background: 'linear-gradient(90deg,transparent,rgba(200,169,110,.45),transparent)',
+          }} />
+
+          {/* Mission select label */}
+          {remoteStep === null && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.44em', color: 'var(--text-dim)', zIndex: 1 }}>
+              SELECT MISSION
+            </div>
+          )}
+
+          {/* ── Mode cards ──────────────────────────────────────────── */}
+          <div style={{ zIndex: 1, width: '100%', maxWidth: 440, padding: '0 20px' }}>
+
+            {remoteStep === null && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <LobbyCard
+                  title="LOCAL DUEL" desc="TWO UNITS · ONE ARENA · SAME TERMINAL"
+                  color="var(--player-0)" delay={0}
+                  onClick={() => { setGameMode('human-vs-human'); gameStartedRef.current = true; setGameStarted(true); }}
+                />
+                <LobbyCard
+                  title="VS AI UNIT" desc="ENGAGE NEURAL ADVERSARY SYSTEM"
+                  color="var(--player-1)" delay={0.07}
+                  onClick={() => { setGameMode('human-vs-bot'); gameStartedRef.current = true; setGameStarted(true); }}
+                />
+                <LobbyCard
+                  title="REMOTE OPS" desc="LINK WITH REMOTE COMMANDER VIA CHANNEL"
+                  color="var(--gold)" delay={0.14}
+                  onClick={() => { setGameMode('remote'); setRemoteStep('menu'); }}
+                />
+              </div>
+            )}
+
+            {/* Remote: menu */}
+            {remoteStep === 'menu' && (
+              <div className="animate-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                <div style={{ fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 600, letterSpacing: '.25em', color: 'var(--gold)' }}>
+                  REMOTE OPERATIONS
+                </div>
+                {remoteError && (
+                  <div style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--player-0)',
+                    background: 'rgba(255,68,85,.1)', border: '1px solid rgba(255,68,85,.3)',
+                    padding: '6px 14px', borderRadius: 2, letterSpacing: '.1em',
+                  }}>
+                    {remoteError}
+                  </div>
+                )}
+                <TactBtn onClick={handleCreateRoom}>ESTABLISH LINK</TactBtn>
+                <TactBtn onClick={() => { setRemoteStep('joining'); setRemoteError(''); }}>JOIN CHANNEL</TactBtn>
+                <TactBtn ghost onClick={() => { setGameMode('human-vs-human'); setRemoteStep(null); setRemoteError(''); }}>← BACK</TactBtn>
+              </div>
+            )}
+
+            {/* Remote: creating / waiting for opponent */}
+            {remoteStep === 'creating' && (
+              <div className="animate-enter" style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18,
+                padding: '32px 40px', background: 'rgba(10,14,22,0.99)',
+                border: '1px solid rgba(200,169,110,.25)', borderRadius: 3, position: 'relative',
+              }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.4em', color: 'var(--text-dim)' }}>
+                  AWAITING REMOTE UNIT
+                </div>
+                {/* Spinner */}
+                <div style={{
+                  width: 42, height: 42, borderRadius: '50%',
+                  border: '2px solid rgba(200,169,110,.35)', borderTopColor: 'var(--gold)',
+                  animation: 'spin 1.2s linear infinite',
+                }} />
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.3em', color: 'var(--text-dim)' }}>
+                  CHANNEL CODE
+                </div>
+                <div style={{
+                  fontFamily: 'var(--font-display)', fontSize: 60, letterSpacing: '.24em',
+                  color: 'var(--gold)', textShadow: '0 0 22px rgba(200,169,110,.6)',
+                }}>
+                  {roomId}
+                </div>
+                <TactBtn ghost onClick={handleCancelRemote}>ABORT</TactBtn>
+              </div>
+            )}
+
+            {/* Remote: join room */}
+            {remoteStep === 'joining' && (
+              <div className="animate-enter" style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
+                padding: '32px 40px', background: 'rgba(10,14,22,0.99)',
+                border: '1px solid rgba(200,169,110,.25)', borderRadius: 3,
+              }}>
+                <div style={{ fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 600, letterSpacing: '.2em', color: 'var(--gold)' }}>
+                  JOIN CHANNEL
+                </div>
+                <input
+                  value={joinInput} maxLength={6}
+                  onChange={e => { setJoinInput(e.target.value.toUpperCase()); setRemoteError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleJoinRoom()}
+                  placeholder="XXXXXX"
+                  style={{
+                    fontFamily: 'var(--font-display)', fontSize: 46, letterSpacing: '.22em',
+                    textAlign: 'center', width: 230, padding: '11px 16px', borderRadius: 2,
+                    outline: 'none', background: 'rgba(12,16,24,0.99)',
+                    border: '1px solid rgba(200,169,110,.35)', color: 'var(--gold)',
+                  }}
+                  onFocus={e => { e.target.style.borderColor = 'var(--gold)'; e.target.style.boxShadow = '0 0 18px rgba(200,169,110,.35)'; }}
+                  onBlur={e  => { e.target.style.borderColor = 'rgba(200,169,110,.35)'; e.target.style.boxShadow = 'none'; }}
+                />
+                {remoteError && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--player-0)', letterSpacing: '.1em' }}>
+                    {remoteError}
+                  </div>
+                )}
+                <TactBtn onClick={handleJoinRoom}>CONNECT</TactBtn>
+                <TactBtn ghost onClick={() => { setRemoteStep('menu'); setRemoteError(''); setJoinInput(''); }}>← BACK</TactBtn>
+              </div>
+            )}
+          </div>
+        </div>
       )}
+    </>
+  );
+}
+
+// ── BootScreen ────────────────────────────────────────────────────────────────
+const BOOT_LINES = [
+  'INITIALIZING TACTICAL SYSTEMS…',
+  'LOADING MAGNETIC FIELD ENGINE…',
+  'CALIBRATING ARENA BOUNDARIES…',
+  'ESTABLISHING COMBAT PROTOCOLS…',
+  'SYSTEMS NOMINAL — READY',
+];
+
+function BootScreen({ onDone }: { onDone: () => void }) {
+  const [lineIdx,  setLineIdx]  = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [leaving,  setLeaving]  = useState(false);
+
+  useEffect(() => {
+    let line = 0;
+    const advance = () => {
+      if (line >= BOOT_LINES.length - 1) {
+        setProgress(100);
+        setTimeout(() => setLeaving(true), 400);
+        setTimeout(() => onDone(), 900);
+        return;
+      }
+      line++;
+      setLineIdx(line);
+      setProgress(Math.round((line / (BOOT_LINES.length - 1)) * 100));
+      setTimeout(advance, 320);
+    };
+    const t = setTimeout(advance, 240);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-void)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      opacity: leaving ? 0 : 1, transition: 'opacity .5s ease',
+      pointerEvents: leaving ? 'none' : 'all',
+    }}>
+      {/* Hex bg tint */}
+      <div style={{
+        position: 'absolute', inset: 0, opacity: .18,
+        backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpolygon points='28,2 54,16 54,44 28,58 2,44 2,16' fill='none' stroke='rgba(200,169,110,0.5)' stroke-width='0.8'/%3E%3C/svg%3E\")",
+        backgroundSize: '56px 100px',
+      }} />
+
+      {/* Radar ping animation */}
+      <svg width={160} height={160} viewBox="0 0 160 160" style={{ marginBottom: 28, flexShrink: 0 }}>
+        <circle cx={80} cy={80} r={52} fill="none" stroke="rgba(200,169,110,0.12)" strokeWidth="1" />
+        <circle cx={80} cy={80} r={34} fill="none" stroke="rgba(200,169,110,0.07)" strokeWidth="1" />
+        {[0, 480, 960].map((d, i) => (
+          <circle key={i} cx={80} cy={80} r={8} fill="none"
+            stroke="var(--gold)" strokeWidth="1.5" strokeOpacity=".7"
+            style={{ animation: `pingRing 1.5s ${d}ms ease-out infinite` }} />
+        ))}
+        <line x1={80} y1={80} x2={132} y2={80}
+          stroke="var(--gold)" strokeWidth="1.8" strokeOpacity=".8"
+          style={{ transformOrigin: '80px 80px', animation: 'radarSweep 1.8s linear infinite' }} />
+        <circle cx={80} cy={80} r={4}  fill="none" stroke="rgba(200,169,110,0.5)" strokeWidth="1.5" />
+        <circle cx={80} cy={80} r={2}  fill="var(--gold)" fillOpacity=".85" />
+      </svg>
+
+      <div style={{
+        fontFamily: 'var(--font-display)', fontSize: 44, letterSpacing: '.32em', lineHeight: 1,
+        color: 'var(--gold)', textShadow: '0 0 28px rgba(200,169,110,.55)',
+      }}>
+        MAGNET ARENA
+      </div>
+      <div style={{
+        fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.44em',
+        color: 'var(--text-dim)', marginTop: 6, marginBottom: 32,
+      }}>
+        TACTICAL MAGNETIC COMBAT
+      </div>
+
+      {/* Boot log */}
+      <div style={{ width: 380, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 22 }}>
+        {BOOT_LINES.slice(0, lineIdx + 1).map((line, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            opacity: i < lineIdx ? 0.38 : 1, transition: 'opacity .3s',
+          }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 12, width: 16, textAlign: 'center',
+              color: i < lineIdx ? 'rgba(200,169,110,.5)' : 'var(--gold)',
+              animation: i === lineIdx ? 'blink .6s step-end infinite' : 'none',
+            }}>
+              {i < lineIdx ? '✓' : '▶'}
+            </span>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.1em',
+              color: i < lineIdx ? 'var(--text-dim)' : 'var(--text-primary)',
+            }}>
+              {line}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ width: 380, height: 3, background: 'rgba(200,169,110,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', background: 'linear-gradient(90deg,var(--gold),var(--gold2))',
+          width: `${progress}%`, transition: 'width .3s ease',
+          boxShadow: '0 0 10px rgba(200,169,110,.8)',
+        }} />
+      </div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', letterSpacing: '.22em', marginTop: 8 }}>
+        {progress}%
+      </div>
     </div>
   );
 }
 
-// ── Button style helper ───────────────────────────────────────────────────────
-function btnCls(variant: 'primary' | 'secondary' | 'green' | 'ghost') {
-  const base = 'font-mono text-sm font-semibold px-6 py-2 rounded-md border cursor-pointer tracking-wide transition-colors duration-150';
-  const map = {
-    primary:   'bg-[#1f6feb] border-[#388bfd] text-white hover:bg-[#388bfd]',
-    secondary: 'bg-[#21262d] border-[#30363d] text-[#c9d1d9] hover:bg-[#30363d]',
-    green:     'bg-[#1a2d1a] border-[#3fb950] text-[#3fb950] hover:bg-[#243824]',
-    ghost:     'bg-transparent border-[#21262d] text-[#8b949e] hover:border-[#30363d]',
-  };
-  return `${base} ${map[variant]}`;
+// ── PhaseFlash ────────────────────────────────────────────────────────────────
+function PhaseFlash({ phase }: { phase: GamePhase }) {
+  const [show, setShow] = useState(false);
+  const prev = useRef(phase);
+
+  useEffect(() => {
+    if (phase === prev.current) return undefined;
+    prev.current = phase;
+    if (phase === GamePhase.SIMULATING || phase === GamePhase.CHECKING || phase === GamePhase.WIN) {
+      setShow(true);
+      const t = setTimeout(() => setShow(false), 600);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [phase]);
+
+  const label =
+    phase === GamePhase.SIMULATING ? 'FIELD ACTIVE'
+    : phase === GamePhase.CHECKING ? 'SCANNING'
+    : phase === GamePhase.WIN      ? 'MISSION COMPLETE'
+    : '';
+
+  if (!show || !label) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 90, pointerEvents: 'none',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        fontFamily: 'var(--font-display)', fontSize: 72, letterSpacing: '.4em',
+        color: 'var(--gold)', textShadow: '0 0 40px rgba(200,169,110,.9)',
+        animation: 'glitch .4s ease-out both',
+      }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+// ── WinOverlay ────────────────────────────────────────────────────────────────
+function WinOverlay({
+  winner, gameMode, playerIndex, scores, onPlayAgain,
+}: {
+  winner: 0 | 1; gameMode: GameMode; playerIndex: 0 | 1 | null;
+  scores: ScoreRow[]; onPlayAgain: () => void;
+}) {
+  const c   = PLAYER_COLORS[winner];
+  const uid = PLAYER_UIDS[winner];
+  const isVic = gameMode !== 'remote' || winner === playerIndex;
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', background: 'rgba(4,6,10,0.90)', zIndex: 30,
+    }}>
+      {/* Starburst */}
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: .22 }}>
+        {Array.from({ length: 16 }, (_, i) => {
+          const a = (i / 16) * Math.PI * 2;
+          return (
+            <line key={i} x1="50%" y1="50%"
+              x2={`calc(50% + ${(Math.cos(a) * 55).toFixed(1)}%)`}
+              y2={`calc(50% + ${(Math.sin(a) * 55).toFixed(1)}%)`}
+              stroke={c} strokeWidth="1" strokeOpacity=".7" />
+          );
+        })}
+      </svg>
+
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
+        animation: 'winReveal .5s cubic-bezier(0.16,1,0.3,1) both', zIndex: 1,
+        padding: '0 24px', maxHeight: '90%', overflowY: 'auto',
+      }}>
+        <div style={{
+          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.5em',
+          color: 'rgba(200,169,110,.6)', border: '1px solid rgba(200,169,110,.25)',
+          padding: '5px 18px', borderRadius: 2,
+        }}>
+          — MISSION COMPLETE —
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.4em', color: 'var(--text-dim)', marginBottom: 4 }}>
+            UNIT
+          </div>
+          <div style={{
+            fontFamily: 'var(--font-display)', fontSize: 80, lineHeight: 1,
+            letterSpacing: '.06em', color: c,
+            textShadow: `0 0 30px ${c}, 0 0 80px ${c}55`,
+          }}>
+            {uid}
+          </div>
+          <div style={{
+            fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 600,
+            letterSpacing: '.5em', color: 'var(--gold)', marginTop: 4,
+          }}>
+            {isVic ? 'VICTORIOUS' : 'DEFEATED'}
+          </div>
+        </div>
+
+        <div style={{ width: 200, height: 1, background: `linear-gradient(90deg,transparent,${c}99,transparent)` }} />
+
+        {/* Scores */}
+        {scores.length > 0 && (
+          <div style={{ width: 260, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.3em', color: 'rgba(200,169,110,.5)', textAlign: 'center' }}>
+              RECENT ENGAGEMENTS
+            </div>
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 3,
+              background: 'rgba(12,16,24,0.85)', border: '1px solid rgba(200,169,110,.15)',
+              borderRadius: 2, padding: '8px 12px',
+            }}>
+              {scores.map(s => (
+                <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                    {s.game_mode === 'human-vs-bot' ? 'VS AI' : s.game_mode === 'remote' ? 'REMOTE' : 'LOCAL'}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-primary)', textAlign: 'center' }}>
+                    {s.p0_moves + s.p1_moves}
+                  </span>
+                  <span style={{
+                    fontFamily: 'var(--font-display)', fontSize: 13, textAlign: 'right',
+                    color: PLAYER_COLORS[s.winner],
+                    textShadow: `0 0 6px ${PLAYER_COLORS[s.winner]}88`,
+                  }}>
+                    {PLAYER_UIDS[s.winner]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={onPlayAgain}
+          style={{
+            fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.3em',
+            padding: '13px 44px', borderRadius: 2, cursor: 'pointer', transition: 'all .3s',
+            background: 'rgba(200,169,110,.1)', border: '1px solid rgba(200,169,110,.5)',
+            color: 'var(--gold)', boxShadow: '0 0 24px rgba(200,169,110,.18)',
+          }}
+          onMouseEnter={e => {
+            const b = e.currentTarget as HTMLButtonElement;
+            b.style.background = 'rgba(200,169,110,.18)';
+            b.style.boxShadow  = '0 0 36px rgba(200,169,110,.35)';
+          }}
+          onMouseLeave={e => {
+            const b = e.currentTarget as HTMLButtonElement;
+            b.style.background = 'rgba(200,169,110,.1)';
+            b.style.boxShadow  = '0 0 24px rgba(200,169,110,.18)';
+          }}
+        >
+          ↺ NEW MISSION
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── LobbyCard ─────────────────────────────────────────────────────────────────
+function LobbyCard({
+  title, desc, color, delay, onClick,
+}: {
+  title: string; desc: string; color: string; delay: number; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 18, padding: '18px 22px',
+        background: 'rgba(14,20,32,0.98)', border: `1px solid ${color}44`,
+        borderRadius: 3, cursor: 'pointer', textAlign: 'left', width: '100%',
+        transition: 'all .25s', position: 'relative', overflow: 'hidden',
+        animation: `fadeUp .4s ${delay}s ease-out both`,
+      }}
+      onMouseEnter={e => {
+        const b = e.currentTarget as HTMLButtonElement;
+        b.style.borderColor = color + 'aa';
+        b.style.background  = 'rgba(18,26,42,0.99)';
+        b.style.boxShadow   = `0 0 30px ${color}28, inset 0 0 30px ${color}0a`;
+        b.style.transform   = 'translateX(4px)';
+      }}
+      onMouseLeave={e => {
+        const b = e.currentTarget as HTMLButtonElement;
+        b.style.borderColor = color + '44';
+        b.style.background  = 'rgba(14,20,32,0.98)';
+        b.style.boxShadow   = 'none';
+        b.style.transform   = '';
+      }}
+    >
+      {/* Left accent bar */}
+      <div style={{
+        width: 3, height: 'calc(100% + 2px)', position: 'absolute', left: -1, top: -1,
+        background: `linear-gradient(to bottom, transparent, ${color}, transparent)`,
+        borderRadius: 3,
+      }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: 20, fontWeight: 700, letterSpacing: '.16em', color: 'var(--text-primary)' }}>
+          {title}
+        </span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', letterSpacing: '.1em' }}>
+          {desc}
+        </span>
+      </div>
+      <span style={{ marginLeft: 'auto', color: color + '77', fontSize: 18 }}>›</span>
+    </button>
+  );
+}
+
+// ── TactBtn (reusable tactical button) ───────────────────────────────────────
+function TactBtn({
+  children, onClick, ghost = false,
+}: {
+  children: React.ReactNode; onClick: () => void; ghost?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%', padding: '13px',
+        fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.2em',
+        cursor: 'pointer', borderRadius: 2, textTransform: 'uppercase' as const,
+        background: ghost ? 'transparent' : 'rgba(200,169,110,.1)',
+        border: ghost ? 'none' : '1px solid rgba(200,169,110,.35)',
+        color: ghost ? 'var(--text-dim)' : 'var(--gold)',
+        transition: 'all .2s',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.3)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = ''; }}
+    >
+      {children}
+    </button>
+  );
 }
