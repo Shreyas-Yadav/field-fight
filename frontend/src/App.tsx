@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import {
   CANVAS_W, CANVAS_H, DEFAULT_STRENGTH, DEFAULT_FIELD_RADIUS,
@@ -21,10 +21,9 @@ type RemoteStep = 'menu' | 'creating' | 'joining' | null;
 
 export default function App() {
   // ── Mode & game ───────────────────────────────────────────────────────────
-  const [booting,      setBooting]      = useState(true);
   const [gameMode,     setGameMode]     = useState<GameMode>('human-vs-human');
   const [gameStarted,  setGameStarted]  = useState(false);
-  const [arenaSize,    setArenaSize]    = useState(580);
+  const [winSize,      setWinSize]      = useState({ w: window.innerWidth, h: window.innerHeight });
   const gameStartedRef = useRef(false);
   const myTurnPending  = useRef(false);
 
@@ -63,19 +62,21 @@ export default function App() {
 
   const { getAIMove } = useAI(activeMagnetsRef);
 
-  // ── Responsive arena size ─────────────────────────────────────────────────
+  // ── Track window size (arenaSize is derived below via useMemo) ───────────
   useEffect(() => {
-    const calc = () => {
-      const avail = gameStartedRef.current
-        ? window.innerWidth  - 200 * 2 - 20 * 4 - 40
-        : window.innerWidth  - 40;
-      const maxH = window.innerHeight - 130;
-      setArenaSize(Math.max(300, Math.min(avail, maxH)));
-    };
-    calc();
-    window.addEventListener('resize', calc);
-    return () => window.removeEventListener('resize', calc);
-  }, [gameStarted]);
+    const onResize = () => setWinSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Derived synchronously each render so it's always consistent with gameStarted
+  const arenaSize = useMemo(() => {
+    const avail = gameStarted
+      ? winSize.w - 200 * 2 - 20 * 4 - 40
+      : winSize.w - 40;
+    const maxH = winSize.h - 130;
+    return Math.max(300, Math.min(avail, maxH));
+  }, [gameStarted, winSize]);
 
   // ── AI trigger ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -276,9 +277,6 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
-      {booting && <BootScreen onDone={() => setBooting(false)} />}
-      <PhaseFlash phase={phase} />
-
       {/* ── Full-viewport game layout ──────────────────────────────────── */}
       <div style={{
         width: '100vw', height: '100vh', position: 'relative', zIndex: 1,
@@ -559,160 +557,6 @@ export default function App() {
         </div>
       )}
     </>
-  );
-}
-
-// ── BootScreen ────────────────────────────────────────────────────────────────
-const BOOT_LINES = [
-  'INITIALIZING TACTICAL SYSTEMS…',
-  'LOADING MAGNETIC FIELD ENGINE…',
-  'CALIBRATING ARENA BOUNDARIES…',
-  'ESTABLISHING COMBAT PROTOCOLS…',
-  'SYSTEMS NOMINAL — READY',
-];
-
-function BootScreen({ onDone }: { onDone: () => void }) {
-  const [lineIdx,  setLineIdx]  = useState(0);
-  const [progress, setProgress] = useState(0);
-  const [leaving,  setLeaving]  = useState(false);
-
-  useEffect(() => {
-    let line = 0;
-    const advance = () => {
-      if (line >= BOOT_LINES.length - 1) {
-        setProgress(100);
-        setTimeout(() => setLeaving(true), 400);
-        setTimeout(() => onDone(), 900);
-        return;
-      }
-      line++;
-      setLineIdx(line);
-      setProgress(Math.round((line / (BOOT_LINES.length - 1)) * 100));
-      setTimeout(advance, 320);
-    };
-    const t = setTimeout(advance, 240);
-    return () => clearTimeout(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-void)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      opacity: leaving ? 0 : 1, transition: 'opacity .5s ease',
-      pointerEvents: leaving ? 'none' : 'all',
-    }}>
-      {/* Hex bg tint */}
-      <div style={{
-        position: 'absolute', inset: 0, opacity: .18,
-        backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpolygon points='28,2 54,16 54,44 28,58 2,44 2,16' fill='none' stroke='rgba(200,169,110,0.5)' stroke-width='0.8'/%3E%3C/svg%3E\")",
-        backgroundSize: '56px 100px',
-      }} />
-
-      {/* Radar ping animation */}
-      <svg width={160} height={160} viewBox="0 0 160 160" style={{ marginBottom: 28, flexShrink: 0 }}>
-        <circle cx={80} cy={80} r={52} fill="none" stroke="rgba(200,169,110,0.12)" strokeWidth="1" />
-        <circle cx={80} cy={80} r={34} fill="none" stroke="rgba(200,169,110,0.07)" strokeWidth="1" />
-        {[0, 480, 960].map((d, i) => (
-          <circle key={i} cx={80} cy={80} r={8} fill="none"
-            stroke="var(--gold)" strokeWidth="1.5" strokeOpacity=".7"
-            style={{ animation: `pingRing 1.5s ${d}ms ease-out infinite` }} />
-        ))}
-        <line x1={80} y1={80} x2={132} y2={80}
-          stroke="var(--gold)" strokeWidth="1.8" strokeOpacity=".8"
-          style={{ transformOrigin: '80px 80px', animation: 'radarSweep 1.8s linear infinite' }} />
-        <circle cx={80} cy={80} r={4}  fill="none" stroke="rgba(200,169,110,0.5)" strokeWidth="1.5" />
-        <circle cx={80} cy={80} r={2}  fill="var(--gold)" fillOpacity=".85" />
-      </svg>
-
-      <div style={{
-        fontFamily: 'var(--font-display)', fontSize: 44, letterSpacing: '.32em', lineHeight: 1,
-        color: 'var(--gold)', textShadow: '0 0 28px rgba(200,169,110,.55)',
-      }}>
-        MAGNET ARENA
-      </div>
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.44em',
-        color: 'var(--text-dim)', marginTop: 6, marginBottom: 32,
-      }}>
-        TACTICAL MAGNETIC COMBAT
-      </div>
-
-      {/* Boot log */}
-      <div style={{ width: 380, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 22 }}>
-        {BOOT_LINES.slice(0, lineIdx + 1).map((line, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            opacity: i < lineIdx ? 0.38 : 1, transition: 'opacity .3s',
-          }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 12, width: 16, textAlign: 'center',
-              color: i < lineIdx ? 'rgba(200,169,110,.5)' : 'var(--gold)',
-              animation: i === lineIdx ? 'blink .6s step-end infinite' : 'none',
-            }}>
-              {i < lineIdx ? '✓' : '▶'}
-            </span>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.1em',
-              color: i < lineIdx ? 'var(--text-dim)' : 'var(--text-primary)',
-            }}>
-              {line}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ width: 380, height: 3, background: 'rgba(200,169,110,0.1)', borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{
-          height: '100%', background: 'linear-gradient(90deg,var(--gold),var(--gold2))',
-          width: `${progress}%`, transition: 'width .3s ease',
-          boxShadow: '0 0 10px rgba(200,169,110,.8)',
-        }} />
-      </div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', letterSpacing: '.22em', marginTop: 8 }}>
-        {progress}%
-      </div>
-    </div>
-  );
-}
-
-// ── PhaseFlash ────────────────────────────────────────────────────────────────
-function PhaseFlash({ phase }: { phase: GamePhase }) {
-  const [show, setShow] = useState(false);
-  const prev = useRef(phase);
-
-  useEffect(() => {
-    if (phase === prev.current) return undefined;
-    prev.current = phase;
-    if (phase === GamePhase.SIMULATING || phase === GamePhase.CHECKING || phase === GamePhase.WIN) {
-      setShow(true);
-      const t = setTimeout(() => setShow(false), 600);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [phase]);
-
-  const label =
-    phase === GamePhase.SIMULATING ? 'FIELD ACTIVE'
-    : phase === GamePhase.CHECKING ? 'SCANNING'
-    : phase === GamePhase.WIN      ? 'MISSION COMPLETE'
-    : '';
-
-  if (!show || !label) return null;
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 90, pointerEvents: 'none',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <div style={{
-        fontFamily: 'var(--font-display)', fontSize: 72, letterSpacing: '.4em',
-        color: 'var(--gold)', textShadow: '0 0 40px rgba(200,169,110,.9)',
-        animation: 'glitch .4s ease-out both',
-      }}>
-        {label}
-      </div>
-    </div>
   );
 }
 
