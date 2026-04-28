@@ -8,10 +8,12 @@ import pinoHttp from 'pino-http';
 import client from 'prom-client';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH   = join(__dirname, 'matches.json');
+const DB_PATH = process.env.MATCH_DB_PATH ?? join(__dirname, 'matches.json');
 
 const logger = pino({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  level: process.env.NODE_ENV === 'test'       ? 'silent'
+       : process.env.NODE_ENV === 'production' ? 'info'
+       : 'debug',
   base: { service: 'match-history-service' },
 });
 
@@ -130,4 +132,7 @@ app.use((err, req, res, next) => {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3004;
-app.listen(PORT, () => logger.info({ port: PORT }, 'match-history-service ready'));
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => logger.info({ port: PORT }, 'match-history-service ready'));
+}
+export { app };

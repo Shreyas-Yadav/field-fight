@@ -13,7 +13,7 @@ LEADER_LOG    := $(PID_DIR)/leaderboard-api.log
 AUTH_LOG      := $(PID_DIR)/auth-service.log
 HISTORY_LOG   := $(PID_DIR)/match-history-service.log
 
-.PHONY: dev stop restart install logs status observe observe-stop observe-logs
+.PHONY: dev stop restart install logs status observe observe-stop observe-logs test test-watch
 
 start:
 	@mkdir -p $(PID_DIR)
@@ -50,6 +50,15 @@ install:
 	cd $(ROOT)/auth-service          && npm install
 	cd $(ROOT)/match-history-service && npm install
 	@echo "Done."
+
+test:
+	@echo "Installing test dependencies..."
+	@cd $(ROOT)/tests && npm install --silent
+	@echo "Running API tests..."
+	@cd $(ROOT)/tests && npm test
+
+test-watch:
+	@cd $(ROOT)/tests && npm install --silent && npm run test:watch
 
 logs:
 	@echo "=== leaderboard-api ===" && tail -n 20 $(LEADER_LOG) 2>/dev/null || echo "(no log)"

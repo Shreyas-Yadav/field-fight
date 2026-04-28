@@ -12,14 +12,16 @@ import pinoHttp from 'pino-http';
 import client from 'prom-client';
 
 const __dirname  = dirname(fileURLToPath(import.meta.url));
-const USERS_PATH = join(__dirname, 'users.json');
+const USERS_PATH = process.env.USERS_PATH ?? join(__dirname, 'users.json');
 
 const JWT_SECRET    = process.env.JWT_SECRET    || 'magnet-arena-dev-secret';
 const FRONTEND_URL  = process.env.FRONTEND_URL  || 'http://localhost:5173';
 const SERVICE_URL   = process.env.SERVICE_URL   || 'http://localhost:3003';
 
 const logger = pino({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  level: process.env.NODE_ENV === 'test'       ? 'silent'
+       : process.env.NODE_ENV === 'production' ? 'info'
+       : 'debug',
   base: { service: 'auth-service' },
 });
 
@@ -218,4 +220,7 @@ app.use((err, req, res, next) => {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3003;
-app.listen(PORT, () => logger.info({ port: PORT }, 'auth-service ready'));
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => logger.info({ port: PORT }, 'auth-service ready'));
+}
+export { app };

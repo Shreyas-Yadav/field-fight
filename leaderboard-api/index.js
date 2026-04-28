@@ -8,10 +8,12 @@ import pinoHttp from 'pino-http';
 import client from 'prom-client';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, 'scores.json');
+const DB_PATH = process.env.LEADERBOARD_DB_PATH ?? join(__dirname, 'scores.json');
 
 const logger = pino({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  level: process.env.NODE_ENV === 'test'       ? 'silent'
+       : process.env.NODE_ENV === 'production' ? 'info'
+       : 'debug',
   base: { service: 'leaderboard-api' },
 });
 
@@ -119,4 +121,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3002;
-app.listen(PORT, () => logger.info({ port: PORT }, 'leaderboard-api ready'));
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => logger.info({ port: PORT }, 'leaderboard-api ready'));
+}
+export { app };

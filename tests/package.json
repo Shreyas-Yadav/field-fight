@@ -1,0 +1,15 @@
+{
+  "name": "magnet-arena-tests",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.5",
+    "supertest": "^7.2.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
