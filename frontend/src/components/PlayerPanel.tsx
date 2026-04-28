@@ -9,10 +9,11 @@ interface Props {
   activePlayer:      0 | 1;
   isBot?:            boolean;
   isRemoteOpponent?: boolean;
+  playerName?:       string;
 }
 
 export function PlayerPanel({
-  player, handCount, phase, activePlayer, isBot = false, isRemoteOpponent = false,
+  player, handCount, phase, activePlayer, isBot = false, isRemoteOpponent = false, playerName,
 }: Props) {
   const color    = PLAYER_COLORS[player];
   const isActive = activePlayer === player && phase !== GamePhase.WIN;
@@ -59,8 +60,9 @@ export function PlayerPanel({
               letterSpacing: '.14em',
               color: isActive ? color : 'var(--text-muted)',
               transition: 'color .3s',
+              maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
-              {player === 0 ? 'ALPHA' : 'BRAVO'}
+              {playerName ?? (player === 0 ? 'ALPHA' : 'BRAVO')}
             </span>
           </div>
           {(isBot || isRemoteOpponent) && (

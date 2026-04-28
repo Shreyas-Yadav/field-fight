@@ -16,6 +16,14 @@ export default defineConfig({
         target: 'http://localhost:3002',
         changeOrigin: true,
       },
+      '/auth': {
+        target: 'http://localhost:3003',
+        changeOrigin: true,
+      },
+      '/matches': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+      },
     },
   },
 });

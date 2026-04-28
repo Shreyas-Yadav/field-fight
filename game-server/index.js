@@ -1,6 +1,12 @@
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { randomUUID } from 'crypto';
+import pino from 'pino';
+
+const logger = pino({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  base: { service: 'game-server' },
+});
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -12,54 +18,84 @@ const rooms = new Map();
 
 io.on('connection', (socket) => {
   socket.on('create_room', () => {
-    const roomId = randomUUID().slice(0, 6).toUpperCase();
-    rooms.set(roomId, { players: [socket.id] });
-    socket.join(roomId);
-    socket.data.roomId = roomId;
-    socket.emit('room_created', { roomId });
+    try {
+      const roomId = randomUUID().slice(0, 6).toUpperCase();
+      rooms.set(roomId, { players: [socket.id] });
+      socket.join(roomId);
+      socket.data.roomId = roomId;
+      socket.emit('room_created', { roomId });
+      logger.info({ roomId, socketId: socket.id }, 'Room created');
+    } catch (err) {
+      logger.error({ err, socketId: socket.id }, 'Error in create_room');
+    }
   });
 
   socket.on('join_room', ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (!room) {
-      socket.emit('join_error', { message: 'Room not found' });
-      return;
-    }
-    if (room.players.length >= 2) {
-      socket.emit('join_error', { message: 'Room is full' });
-      return;
-    }
-    room.players.push(socket.id);
-    socket.join(roomId);
-    socket.data.roomId = roomId;
+    try {
+      const room = rooms.get(roomId);
+      if (!room) {
+        socket.emit('join_error', { message: 'Room not found' });
+        return;
+      }
+      if (room.players.length >= 2) {
+        socket.emit('join_error', { message: 'Room is full' });
+        return;
+      }
+      room.players.push(socket.id);
+      socket.join(roomId);
+      socket.data.roomId = roomId;
 
-    const [p0, p1] = room.players;
-    io.to(p0).emit('game_start', { playerIndex: 0 });
-    io.to(p1).emit('game_start', { playerIndex: 1 });
+      const [p0, p1] = room.players;
+      io.to(p0).emit('game_start', { playerIndex: 0 });
+      io.to(p1).emit('game_start', { playerIndex: 1 });
+      logger.info({ roomId, socketId: socket.id }, 'Player joined room');
+    } catch (err) {
+      logger.error({ err, socketId: socket.id }, 'Error in join_room');
+    }
   });
 
   socket.on('place_magnet', ({ x, y }) => {
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
-    socket.to(roomId).emit('opponent_placed', { x, y });
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit('opponent_placed', { x, y });
+    } catch (err) {
+      logger.error({ err, socketId: socket.id }, 'Error in place_magnet');
+    }
   });
 
-  // Authoritative state sync: relay final magnet positions after each turn
   socket.on('sync_state', (data) => {
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
-    socket.to(roomId).emit('state_sync', data);
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit('state_sync', data);
+    } catch (err) {
+      logger.error({ err, socketId: socket.id }, 'Error in sync_state');
+    }
   });
 
   socket.on('disconnect', () => {
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
-    socket.to(roomId).emit('opponent_disconnected');
-    rooms.delete(roomId);
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit('opponent_disconnected');
+      rooms.delete(roomId);
+      logger.info({ roomId, socketId: socket.id }, 'Player disconnected');
+    } catch (err) {
+      logger.error({ err, socketId: socket.id }, 'Error in disconnect');
+    }
   });
+
+  socket.on('error', (err) => {
+    logger.error({ err, socketId: socket.id, roomId: socket.data.roomId }, 'Socket error');
+  });
+});
+
+io.engine.on('connection_error', (err) => {
+  logger.error({ err }, 'Engine connection error');
 });
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
-  console.log(`game-server listening on :${PORT}`);
+  logger.info({ port: PORT }, 'game-server ready');
 });

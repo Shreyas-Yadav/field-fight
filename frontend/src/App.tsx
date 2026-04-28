@@ -13,13 +13,20 @@ import { useFieldRenderer } from './hooks/useFieldRenderer';
 import { useAI }            from './hooks/useAI';
 import { useParticles }     from './hooks/useParticles';
 import { useFieldViz }      from './hooks/useFieldViz';
+import { useAuth }          from './hooks/useAuth';
 import { Controls }         from './components/Controls';
 import { SimCanvas }        from './components/SimCanvas';
 import { PlayerPanel }      from './components/PlayerPanel';
+import { LoginScreen }      from './components/LoginScreen';
 
 type RemoteStep = 'menu' | 'creating' | 'joining' | null;
 
 export default function App() {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const { user, loading: authLoading, logout, error: authError, clearError: clearAuthError } = useAuth();
+  const [guestMode, setGuestMode] = useState(false);
+  const isAuthenticated = !!user || guestMode;
+
   // ── Mode & game ───────────────────────────────────────────────────────────
   const [gameMode,     setGameMode]     = useState<GameMode>('human-vs-human');
   const [gameStarted,  setGameStarted]  = useState(false);
@@ -94,17 +101,36 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [phase, activePlayer, gameMode, getAIMove, placeForActivePlayer]);
 
-  // ── Leaderboard: submit on win ─────────────────────────────────────────────
+  // ── Leaderboard + match history: submit on win ───────────────────────────
   useEffect(() => {
     if (phase !== GamePhase.WIN || winner === null) return;
+
+    const p0Moves = HAND_SIZE - hands[0];
+    const p1Moves = HAND_SIZE - hands[1];
+
     fetch('/api/scores', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        winner, gameMode,
-        p0Moves: HAND_SIZE - hands[0],
-        p1Moves: HAND_SIZE - hands[1],
-      }),
+      body: JSON.stringify({ winner, gameMode, p0Moves, p1Moves }),
+    }).catch(() => {});
+
+    // Determine player names based on auth + game mode
+    const localPlayerIdx = gameMode === 'remote' ? playerIndex : 0;
+    const localName = user?.name?.toUpperCase() ?? (guestMode ? 'COMMANDER' : 'ALPHA');
+    const opponentName =
+      gameMode === 'human-vs-bot'    ? 'AI UNIT'
+      : gameMode === 'remote'        ? 'NET OPPONENT'
+      : 'BRAVO';
+
+    const p0Name = localPlayerIdx === 0 ? localName  : opponentName;
+    const p1Name = localPlayerIdx === 1 ? localName  : opponentName;
+    const p0Id   = localPlayerIdx === 0 ? (user?.id ?? null) : null;
+    const p1Id   = localPlayerIdx === 1 ? (user?.id ?? null) : null;
+
+    fetch('/matches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p0Id, p0Name, p1Id, p1Name, winner, gameMode, p0Moves, p1Moves }),
     }).catch(() => {});
   }, [phase, winner]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -274,7 +300,22 @@ export default function App() {
 
   const modeTag = gameMode === 'human-vs-bot' ? 'VS AI' : gameMode === 'remote' ? 'REMOTE OPS' : 'LOCAL DUEL';
 
+  // ── Derived player display names ──────────────────────────────────────────
+  const localName = user?.name?.toUpperCase() ?? 'COMMANDER';
+  const p0DisplayName =
+    gameMode === 'remote'
+      ? (playerIndex === 0 ? localName : undefined)
+      : localName;
+  const p1DisplayName =
+    gameMode === 'human-vs-bot'   ? 'AI UNIT'
+    : gameMode === 'remote' && playerIndex === 1 ? localName
+    : undefined;
+
   // ── Render ────────────────────────────────────────────────────────────────
+  if (!authLoading && !isAuthenticated) {
+    return <LoginScreen onGuest={() => setGuestMode(true)} error={authError} onClearError={clearAuthError} />;
+  }
+
   return (
     <>
       {/* ── Full-viewport game layout ──────────────────────────────────── */}
@@ -320,17 +361,43 @@ export default function App() {
             </div>
           )}
 
-          {/* Mode tag */}
-          {gameStarted && (
-            <div style={{
-              fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.2em',
-              color: 'var(--gold)', background: 'rgba(200,169,110,.1)',
-              border: '1px solid rgba(200,169,110,.28)', padding: '5px 14px',
-              borderRadius: 2, flexShrink: 0,
-            }}>
-              {modeTag}
-            </div>
-          )}
+          {/* Mode tag + user info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {gameStarted && (
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.2em',
+                color: 'var(--gold)', background: 'rgba(200,169,110,.1)',
+                border: '1px solid rgba(200,169,110,.28)', padding: '5px 14px',
+                borderRadius: 2,
+              }}>
+                {modeTag}
+              </div>
+            )}
+            {user && (
+              <button
+                onClick={logout}
+                title={`Signed in as ${user.name}`}
+                style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.12em',
+                  padding: '5px 10px', borderRadius: 2, cursor: 'pointer',
+                  background: 'transparent', border: '1px solid rgba(200,169,110,.18)',
+                  color: 'var(--text-dim)', transition: 'all .2s',
+                }}
+                onMouseEnter={e => {
+                  const b = e.currentTarget as HTMLButtonElement;
+                  b.style.color = 'var(--player-0)';
+                  b.style.borderColor = 'rgba(255,68,85,.35)';
+                }}
+                onMouseLeave={e => {
+                  const b = e.currentTarget as HTMLButtonElement;
+                  b.style.color = 'var(--text-dim)';
+                  b.style.borderColor = 'rgba(200,169,110,.18)';
+                }}
+              >
+                {user.name.split(' ')[0].toUpperCase()} ⏻
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Middle row: HUD · Arena · HUD ─────────────────────────── */}
@@ -341,7 +408,8 @@ export default function App() {
           {gameStarted && (
             <PlayerPanel player={0} handCount={hands[0]} phase={phase}
               activePlayer={activePlayer} isBot={false}
-              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 0} />
+              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 0}
+              playerName={p0DisplayName} />
           )}
 
           {/* Arena wrapper */}
@@ -389,7 +457,8 @@ export default function App() {
           {gameStarted && (
             <PlayerPanel player={1} handCount={hands[1]} phase={phase}
               activePlayer={activePlayer} isBot={gameMode === 'human-vs-bot'}
-              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 1} />
+              isRemoteOpponent={gameMode === 'remote' && playerIndex !== 1}
+              playerName={p1DisplayName} />
           )}
         </div>
 
@@ -417,6 +486,73 @@ export default function App() {
             boxShadow: '0 0 80px 10px rgba(200,169,110,0.05)' }} />
           <div style={{ position: 'absolute', width: 560, height: 560, borderRadius: '50%',
             border: '1px dashed rgba(200,169,110,0.06)', pointerEvents: 'none' }} />
+
+          {/* Profile chip — top-right corner */}
+          <div style={{
+            position: 'absolute', top: 16, right: 20, zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            {user ? (
+              <>
+                {user.avatar && (
+                  <img src={user.avatar} alt="" referrerPolicy="no-referrer" style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    border: '1px solid rgba(200,169,110,.35)', objectFit: 'cover',
+                  }} />
+                )}
+                <span style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.14em',
+                  color: 'var(--gold)',
+                }}>
+                  {user.name.toUpperCase()}
+                </span>
+                <button
+                  onClick={logout}
+                  style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.12em',
+                    padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
+                    background: 'transparent', border: '1px solid rgba(200,169,110,.2)',
+                    color: 'var(--text-dim)', transition: 'all .2s',
+                  }}
+                  onMouseEnter={e => {
+                    const b = e.currentTarget as HTMLButtonElement;
+                    b.style.color = 'var(--player-0)';
+                    b.style.borderColor = 'rgba(255,68,85,.4)';
+                  }}
+                  onMouseLeave={e => {
+                    const b = e.currentTarget as HTMLButtonElement;
+                    b.style.color = 'var(--text-dim)';
+                    b.style.borderColor = 'rgba(200,169,110,.2)';
+                  }}
+                >
+                  LOGOUT
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.2em',
+                  color: 'var(--text-dim)', background: 'rgba(200,169,110,.06)',
+                  border: '1px solid rgba(200,169,110,.15)', padding: '4px 10px', borderRadius: 2,
+                }}>
+                  GUEST
+                </span>
+                <button
+                  onClick={() => setGuestMode(false)}
+                  style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.12em',
+                    padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
+                    background: 'rgba(200,169,110,.08)', border: '1px solid rgba(200,169,110,.3)',
+                    color: 'var(--gold)', transition: 'all .2s',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(200,169,110,.15)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(200,169,110,.08)'; }}
+                >
+                  SIGN IN
+                </button>
+              </>
+            )}
+          </div>
 
           {/* Title block */}
           <div style={{ textAlign: 'center', zIndex: 1 }}>

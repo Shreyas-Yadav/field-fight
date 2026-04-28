@@ -9,6 +9,12 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Stat
     return { hasError: true };
   }
 
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    console.error('[ErrorBoundary] Uncaught error:', error.message, {
+      componentStack: info.componentStack,
+    });
+  }
+
   render() {
     if (this.state.hasError) {
       return (

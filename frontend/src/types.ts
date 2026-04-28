@@ -7,6 +7,13 @@ export enum GamePhase {
 
 export type GameMode = 'human-vs-human' | 'human-vs-bot' | 'remote';
 
+export interface AuthUser {
+  id: string;
+  name: string;
+  avatar?: string;
+  provider: string;
+}
+
 export interface ScoreRow {
   id: number;
   winner: 0 | 1;

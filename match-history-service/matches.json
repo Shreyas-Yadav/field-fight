@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1777310005925,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "AI UNIT",
+    "winner": 1,
+    "gameMode": "human-vs-bot",
+    "p0Moves": -2,
+    "p1Moves": 10,
+    "createdAt": "2026-04-27T17:13:25.925Z"
+  },
+  {
+    "id": 1777326790893,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "AI UNIT",
+    "winner": 0,
+    "gameMode": "human-vs-bot",
+    "p0Moves": 10,
+    "p1Moves": -3,
+    "createdAt": "2026-04-27T21:53:10.893Z"
+  },
+  {
+    "id": 1777345979519,
+    "p0Id": "github:94428912",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "AI UNIT",
+    "winner": 0,
+    "gameMode": "human-vs-bot",
+    "p0Moves": 10,
+    "p1Moves": -3,
+    "createdAt": "2026-04-28T03:12:59.519Z"
+  }
+]
