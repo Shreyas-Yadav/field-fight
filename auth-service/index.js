@@ -9,6 +9,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
+import client from 'prom-client';
 
 const __dirname  = dirname(fileURLToPath(import.meta.url));
 const USERS_PATH = join(__dirname, 'users.json');
@@ -20,6 +21,32 @@ const SERVICE_URL   = process.env.SERVICE_URL   || 'http://localhost:3003';
 const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   base: { service: 'auth-service' },
+});
+
+// ── Metrics ───────────────────────────────────────────────────────────────────
+
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+const authLoginsTotal = new client.Counter({
+  name: 'auth_logins_total',
+  help: 'Total OAuth login attempts',
+  labelNames: ['provider', 'status'],
+  registers: [register],
+});
+
+const authLoginDuration = new client.Histogram({
+  name: 'auth_login_duration_seconds',
+  help: 'OAuth callback handler duration in seconds',
+  labelNames: ['provider'],
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
+  registers: [register],
+});
+
+const authTokensIssuedTotal = new client.Counter({
+  name: 'auth_tokens_issued_total',
+  help: 'Total JWT tokens successfully issued',
+  registers: [register],
 });
 
 // ── User store (flat JSON) ────────────────────────────────────────────────────
@@ -104,6 +131,13 @@ app.use(pinoHttp({
 }));
 app.use(passport.initialize());
 
+// ── Metrics endpoint ──────────────────────────────────────────────────────────
+
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
 // ── OAuth routes ──────────────────────────────────────────────────────────────
 
 app.get('/auth/google',
@@ -113,8 +147,15 @@ app.get('/auth/google',
 app.get('/auth/google/callback',
   passport.authenticate('google', { session: false, failureRedirect: `${FRONTEND_URL}?auth_error=1` }),
   (req, res) => {
-    const token = jwt.sign(req.user, JWT_SECRET, { expiresIn: '7d' });
-    res.redirect(`${FRONTEND_URL}?token=${encodeURIComponent(token)}`);
+    const end = authLoginDuration.startTimer({ provider: 'google' });
+    try {
+      const token = jwt.sign(req.user, JWT_SECRET, { expiresIn: '7d' });
+      authLoginsTotal.inc({ provider: 'google', status: 'success' });
+      authTokensIssuedTotal.inc();
+      res.redirect(`${FRONTEND_URL}?token=${encodeURIComponent(token)}`);
+    } finally {
+      end();
+    }
   },
 );
 
@@ -123,17 +164,25 @@ app.get('/auth/github',
 );
 
 app.get('/auth/github/callback', (req, res, next) => {
+  const end = authLoginDuration.startTimer({ provider: 'github' });
   passport.authenticate('github', { session: false }, (err, user, info) => {
     if (err) {
+      authLoginsTotal.inc({ provider: 'github', status: 'error' });
+      end();
       logger.error({ err }, 'GitHub strategy error');
       return res.redirect(`${FRONTEND_URL}?auth_error=strategy_error`);
     }
     if (!user) {
+      authLoginsTotal.inc({ provider: 'github', status: 'no_user' });
+      end();
       logger.warn({ info }, 'No user returned from GitHub');
       return res.redirect(`${FRONTEND_URL}?auth_error=no_user`);
     }
     logger.info({ userId: user.id }, 'GitHub user authenticated');
     const token = jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
+    authLoginsTotal.inc({ provider: 'github', status: 'success' });
+    authTokensIssuedTotal.inc();
+    end();
     logger.debug({ userId: user.id }, 'Token created');
     res.redirect(`${FRONTEND_URL}?token=${encodeURIComponent(token)}`);
   })(req, res, next);

@@ -7,7 +7,8 @@
     "dev": "node --watch index.js"
   },
   "dependencies": {
-    "socket.io": "^4.7.5",
-    "pino": "^9"
+    "pino": "^9",
+    "prom-client": "^15.1.3",
+    "socket.io": "^4.7.5"
   }
 }

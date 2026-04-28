@@ -70,5 +70,21 @@
     "p0_moves": 10,
     "p1_moves": -3,
     "created_at": "2026-04-28T03:12:59.519Z"
+  },
+  {
+    "id": 1777360766564,
+    "winner": 0,
+    "game_mode": "human-vs-bot",
+    "p0_moves": 10,
+    "p1_moves": -5,
+    "created_at": "2026-04-28T07:19:26.564Z"
+  },
+  {
+    "id": 1777361778693,
+    "winner": 0,
+    "game_mode": "human-vs-bot",
+    "p0_moves": 10,
+    "p1_moves": -3,
+    "created_at": "2026-04-28T07:36:18.693Z"
   }
 ]

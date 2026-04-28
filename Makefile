@@ -13,7 +13,7 @@ LEADER_LOG    := $(PID_DIR)/leaderboard-api.log
 AUTH_LOG      := $(PID_DIR)/auth-service.log
 HISTORY_LOG   := $(PID_DIR)/match-history-service.log
 
-.PHONY: dev stop restart install logs status
+.PHONY: dev stop restart install logs status observe observe-stop observe-logs
 
 start:
 	@mkdir -p $(PID_DIR)
@@ -64,6 +64,28 @@ status:
 	@$(MAKE) --no-print-directory _status NAME="leaderboard-api"       PID=$(LEADER_PID)
 	@$(MAKE) --no-print-directory _status NAME="auth-service"          PID=$(AUTH_PID)
 	@$(MAKE) --no-print-directory _status NAME="match-history-service" PID=$(HISTORY_PID)
+
+# -- Observability stack (Prometheus + Grafana in Docker) ----------------------
+
+OBSERVE_DIR := $(ROOT)/observability
+
+observe:
+	@echo "Starting observability stack (Prometheus + Grafana)..."
+	@docker compose -f $(OBSERVE_DIR)/docker-compose.yml up -d
+	@echo ""
+	@echo "Observability stack started."
+	@echo "  Prometheus -> http://localhost:9090"
+	@echo "  Grafana    -> http://localhost:3000  (admin / magnet-admin)"
+	@echo ""
+	@echo "Stop: make observe-stop"
+
+observe-stop:
+	@echo "Stopping observability stack..."
+	@docker compose -f $(OBSERVE_DIR)/docker-compose.yml down
+	@echo "Observability stack stopped."
+
+observe-logs:
+	@docker compose -f $(OBSERVE_DIR)/docker-compose.yml logs --tail=50 --follow
 
 # -- Internal helpers ---------------------------------------------------------
 
