@@ -55,9 +55,14 @@ function saveMatches(matches) {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(cors());
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 app.use(pinoHttp({ logger }));
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'match-history-service', uptime: process.uptime() });
+});
 
 app.get('/metrics', async (_req, res) => {
   res.set('Content-Type', register.contentType);
@@ -133,6 +138,15 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3004;
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => logger.info({ port: PORT }, 'match-history-service ready'));
+  const server = app.listen(PORT, () => logger.info({ port: PORT }, 'match-history-service ready'));
+  const shutdown = () => {
+    logger.info('SIGTERM received — closing server');
+    server.close(() => {
+      logger.info('Server closed');
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 export { app };

@@ -13,7 +13,7 @@ LEADER_LOG    := $(PID_DIR)/leaderboard-api.log
 AUTH_LOG      := $(PID_DIR)/auth-service.log
 HISTORY_LOG   := $(PID_DIR)/match-history-service.log
 
-.PHONY: dev stop restart install logs status observe observe-stop observe-logs test test-watch
+.PHONY: start stop restart install logs status observe observe-stop observe-logs test test-watch docker-up docker-down docker-logs docker-build docker-rebuild
 
 start:
 	@mkdir -p $(PID_DIR)
@@ -95,6 +95,41 @@ observe-stop:
 
 observe-logs:
 	@docker compose -f $(OBSERVE_DIR)/docker-compose.yml logs --tail=50 --follow
+
+# -- Docker (containerized) ---------------------------------------------------
+
+docker-build:
+	@echo "Building Docker images (parallel)..."
+	@docker compose build --parallel
+	@echo "Done. Run: make docker-up"
+
+docker-up:
+	@echo "Starting all services in Docker..."
+	@docker compose --env-file .env.local up -d
+	@echo ""
+	@echo "Docker services started."
+	@echo "  frontend              -> http://localhost:5173"
+	@echo "  game-server           -> http://localhost:3001"
+	@echo "  leaderboard-api       -> http://localhost:3002"
+	@echo "  auth-service          -> http://localhost:3003"
+	@echo "  match-history-service -> http://localhost:3004"
+	@echo ""
+	@echo "Logs: make docker-logs    Stop: make docker-down"
+
+docker-down:
+	@echo "Stopping Docker services..."
+	@docker compose down
+	@echo "Docker services stopped."
+
+docker-logs:
+	@docker compose logs -f
+
+docker-rebuild:
+	@echo "Rebuilding and restarting Docker services (parallel)..."
+	@docker compose down
+	@docker compose build --parallel
+	@docker compose --env-file .env.local up -d
+	@echo "Docker services rebuilt and started."
 
 # -- Internal helpers ---------------------------------------------------------
 

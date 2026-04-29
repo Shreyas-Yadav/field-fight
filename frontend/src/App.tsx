@@ -24,8 +24,7 @@ type RemoteStep = 'menu' | 'creating' | 'joining' | null;
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const { user, loading: authLoading, logout, error: authError, clearError: clearAuthError } = useAuth();
-  const [guestMode, setGuestMode] = useState(false);
-  const isAuthenticated = !!user || guestMode;
+  const isAuthenticated = !!user;
 
   // ── Mode & game ───────────────────────────────────────────────────────────
   const [gameMode,     setGameMode]     = useState<GameMode>('human-vs-human');
@@ -116,7 +115,7 @@ export default function App() {
 
     // Determine player names based on auth + game mode
     const localPlayerIdx = gameMode === 'remote' ? playerIndex : 0;
-    const localName = user?.name?.toUpperCase() ?? (guestMode ? 'COMMANDER' : 'ALPHA');
+    const localName = user?.name?.toUpperCase() ?? 'COMMANDER';
     const opponentName =
       gameMode === 'human-vs-bot'    ? 'AI UNIT'
       : gameMode === 'remote'        ? 'NET OPPONENT'
@@ -313,7 +312,7 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (!authLoading && !isAuthenticated) {
-    return <LoginScreen onGuest={() => setGuestMode(true)} error={authError} onClearError={clearAuthError} />;
+    return <LoginScreen error={authError} onClearError={clearAuthError} />;
   }
 
   return (
@@ -492,7 +491,7 @@ export default function App() {
             position: 'absolute', top: 16, right: 20, zIndex: 10,
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            {user ? (
+            {user && (
               <>
                 {user.avatar && (
                   <img src={user.avatar} alt="" referrerPolicy="no-referrer" style={{
@@ -526,29 +525,6 @@ export default function App() {
                   }}
                 >
                   LOGOUT
-                </button>
-              </>
-            ) : (
-              <>
-                <span style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.2em',
-                  color: 'var(--text-dim)', background: 'rgba(200,169,110,.06)',
-                  border: '1px solid rgba(200,169,110,.15)', padding: '4px 10px', borderRadius: 2,
-                }}>
-                  GUEST
-                </span>
-                <button
-                  onClick={() => setGuestMode(false)}
-                  style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.12em',
-                    padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
-                    background: 'rgba(200,169,110,.08)', border: '1px solid rgba(200,169,110,.3)',
-                    color: 'var(--gold)', transition: 'all .2s',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(200,169,110,.15)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(200,169,110,.08)'; }}
-                >
-                  SIGN IN
                 </button>
               </>
             )}

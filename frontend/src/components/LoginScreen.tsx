@@ -1,10 +1,9 @@
 interface Props {
-  onGuest: () => void;
   error?: string | null;
   onClearError?: () => void;
 }
 
-export function LoginScreen({ onGuest, error, onClearError }: Props) {
+export function LoginScreen({ error, onClearError }: Props) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
@@ -90,32 +89,6 @@ export function LoginScreen({ onGuest, error, onClearError }: Props) {
           color="var(--player-1)"
         />
 
-        {/* Divider */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0',
-        }}>
-          <div style={{ flex: 1, height: 1, background: 'rgba(200,169,110,.15)' }} />
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.2em',
-            color: 'var(--text-dim)',
-          }}>OR</span>
-          <div style={{ flex: 1, height: 1, background: 'rgba(200,169,110,.15)' }} />
-        </div>
-
-        <button
-          onClick={onGuest}
-          style={{
-            width: '100%', padding: '12px',
-            fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.2em',
-            cursor: 'pointer', borderRadius: 2,
-            background: 'transparent', border: 'none',
-            color: 'var(--text-dim)', transition: 'color .2s',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--gold)'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-dim)'; }}
-        >
-          PLAY AS GUEST
-        </button>
       </div>
     </div>
   );

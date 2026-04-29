@@ -61,6 +61,11 @@ const rooms = new Map();
 
 // Register the /metrics handler BEFORE constructing new Server()
 const httpServer = createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', service: 'game-server', uptime: process.uptime() }));
+    return;
+  }
   if (req.method === 'GET' && req.url === '/metrics') {
     register.metrics().then((data) => {
       res.writeHead(200, { 'Content-Type': register.contentType });
@@ -75,8 +80,10 @@ const httpServer = createServer((req, res) => {
   res.end('Not found');
 });
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+
 io = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
 });
 
 io.on('connection', (socket) => {
@@ -178,3 +185,15 @@ const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   logger.info({ port: PORT }, 'game-server ready');
 });
+
+const shutdown = () => {
+  logger.info('SIGTERM received — closing server');
+  io.close(() => {
+    httpServer.close(() => {
+      logger.info('Server closed');
+      process.exit(0);
+    });
+  });
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

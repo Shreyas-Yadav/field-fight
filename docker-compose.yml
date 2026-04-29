@@ -1,0 +1,86 @@
+services:
+  game-server:
+    build:
+      context: ./game-server
+      dockerfile: Dockerfile
+    container_name: magnet-game-server
+    ports:
+      - "3001:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - CORS_ORIGIN=*
+    restart: unless-stopped
+
+  leaderboard-api:
+    build:
+      context: ./leaderboard-api
+      dockerfile: Dockerfile
+    container_name: magnet-leaderboard-api
+    ports:
+      - "3002:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - LEADERBOARD_DB_PATH=/data/scores.json
+      - CORS_ORIGIN=*
+    volumes:
+      - leaderboard-data:/data
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: magnet-auth-service
+    ports:
+      - "3003:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - FRONTEND_URL=http://localhost:5173
+      - SERVICE_URL=http://localhost:3003
+      - USERS_PATH=/data/users.json
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - JWT_SECRET=${JWT_SECRET:-magnet-arena-dev-secret}
+    volumes:
+      - auth-data:/data
+    restart: unless-stopped
+
+  match-history:
+    build:
+      context: ./match-history-service
+      dockerfile: Dockerfile
+    container_name: magnet-match-history
+    ports:
+      - "3004:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - MATCH_DB_PATH=/data/matches.json
+      - CORS_ORIGIN=*
+    volumes:
+      - match-history-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: magnet-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - game-server
+      - leaderboard-api
+      - auth-service
+      - match-history
+    restart: unless-stopped
+
+volumes:
+  leaderboard-data:
+  auth-data:
+  match-history-data:

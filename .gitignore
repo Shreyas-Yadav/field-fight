@@ -38,3 +38,8 @@ Thumbs.db
 
 # temp DB JSON files
 leaderboard-api/scores.json
+match-history-service/matches.json
+auth-service/users.json
+
+# Secrets
+auth-service/.env

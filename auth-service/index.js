@@ -133,6 +133,12 @@ app.use(pinoHttp({
 }));
 app.use(passport.initialize());
 
+// ── Health check ──────────────────────────────────────────────────────────────
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'auth-service', uptime: process.uptime() });
+});
+
 // ── Metrics endpoint ──────────────────────────────────────────────────────────
 
 app.get('/metrics', async (_req, res) => {
@@ -221,6 +227,15 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3003;
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => logger.info({ port: PORT }, 'auth-service ready'));
+  const server = app.listen(PORT, () => logger.info({ port: PORT }, 'auth-service ready'));
+  const shutdown = () => {
+    logger.info('SIGTERM received — closing server');
+    server.close(() => {
+      logger.info('Server closed');
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 export { app };

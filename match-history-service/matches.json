@@ -58,5 +58,65 @@
     "p0Moves": 10,
     "p1Moves": -3,
     "createdAt": "2026-04-28T07:36:18.693Z"
+  },
+  {
+    "id": 1777400660292,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "AI UNIT",
+    "winner": 1,
+    "gameMode": "human-vs-bot",
+    "p0Moves": -2,
+    "p1Moves": 10,
+    "createdAt": "2026-04-28T18:24:20.292Z"
+  },
+  {
+    "id": 1777404537205,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "AI UNIT",
+    "winner": 1,
+    "gameMode": "human-vs-bot",
+    "p0Moves": -2,
+    "p1Moves": 10,
+    "createdAt": "2026-04-28T19:28:57.205Z"
+  },
+  {
+    "id": 1777404672039,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "BRAVO",
+    "winner": 0,
+    "gameMode": "human-vs-human",
+    "p0Moves": 10,
+    "p1Moves": -4,
+    "createdAt": "2026-04-28T19:31:12.039Z"
+  },
+  {
+    "id": 1777404994320,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "BRAVO",
+    "winner": 1,
+    "gameMode": "human-vs-human",
+    "p0Moves": 6,
+    "p1Moves": 10,
+    "createdAt": "2026-04-28T19:36:34.320Z"
+  },
+  {
+    "id": 1777448382500,
+    "p0Id": "google:103474993931193323847",
+    "p0Name": "SHREYAS YADAV",
+    "p1Id": null,
+    "p1Name": "AI UNIT",
+    "winner": 0,
+    "gameMode": "human-vs-bot",
+    "p0Moves": 10,
+    "p1Moves": -4,
+    "createdAt": "2026-04-29T07:39:42.500Z"
   }
 ]
