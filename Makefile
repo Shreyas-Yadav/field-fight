@@ -104,10 +104,11 @@ docker-build:
 	@echo "Done. Run: make docker-up"
 
 docker-up:
-	@echo "Starting all services in Docker..."
+	@echo "Starting all services and Postgres in Docker..."
 	@docker compose --env-file .env.local up -d
 	@echo ""
 	@echo "Docker services started."
+	@echo "  postgres              -> localhost:5432"
 	@echo "  frontend              -> http://localhost:5173"
 	@echo "  game-server           -> http://localhost:3001"
 	@echo "  leaderboard-api       -> http://localhost:3002"
@@ -125,7 +126,7 @@ docker-logs:
 	@docker compose logs -f
 
 docker-rebuild:
-	@echo "Rebuilding and restarting Docker services (parallel)..."
+	@echo "Rebuilding and restarting Docker services and Postgres (parallel)..."
 	@docker compose down
 	@docker compose build --parallel
 	@docker compose --env-file .env.local up -d

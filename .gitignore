@@ -43,3 +43,7 @@ auth-service/users.json
 
 # Secrets
 auth-service/.env
+
+
+#docs
+docs/
