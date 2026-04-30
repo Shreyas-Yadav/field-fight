@@ -1,22 +1,19 @@
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { writeFile, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import request from 'supertest';
-
-const DB_FILE = join(tmpdir(), `leaderboard-test-${Date.now()}.json`);
+import { prepareDatabase, truncateTables } from './db.js';
 
 let app;
+let pool;
 
 beforeAll(async () => {
-  await writeFile(DB_FILE, '[]', 'utf8');
   process.env.NODE_ENV = 'test';
-  process.env.LEADERBOARD_DB_PATH = DB_FILE;
-  ({ app } = await import('../leaderboard-api/index.js'));
+  await prepareDatabase();
+  await truncateTables('leaderboard_scores');
+  ({ app, pool } = await import('../leaderboard-api/index.js'));
 });
 
 afterAll(async () => {
-  await rm(DB_FILE, { force: true });
+  await pool.end();
 });
 
 describe('GET /api/scores', () => {
@@ -59,8 +56,7 @@ describe('GET /api/scores', () => {
   });
 
   it('returns scores newest-first', async () => {
-    await rm(DB_FILE, { force: true });
-    await writeFile(DB_FILE, '[]', 'utf8');
+    await truncateTables('leaderboard_scores');
     for (let i = 0; i < 3; i++) {
       await request(app).post('/api/scores').send({
         winner: i,
@@ -78,8 +74,7 @@ describe('GET /api/scores', () => {
 
 describe('POST /api/scores', () => {
   beforeAll(async () => {
-    await rm(DB_FILE, { force: true });
-    await writeFile(DB_FILE, '[]', 'utf8');
+    await truncateTables('leaderboard_scores');
   });
 
   it('returns 201 with id for valid payload', async () => {

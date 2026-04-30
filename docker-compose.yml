@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     container_name: magnet-postgres
     ports:
-      - "5432:5432"
+      - "55432:5432"
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-magnet_vis}
       - POSTGRES_USER=${POSTGRES_USER:-magnet_vis}
@@ -16,6 +16,18 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./migrations
+      dockerfile: Dockerfile
+    container_name: magnet-migrate
+    environment:
+      - DATABASE_URL=postgres://magnet_vis:magnet_vis_password@postgres:5432/magnet_vis
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   game-server:
     build:
@@ -40,10 +52,11 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=development
-      - LEADERBOARD_DB_PATH=/data/scores.json
+      - DATABASE_URL=postgres://magnet_vis:magnet_vis_password@postgres:5432/magnet_vis
       - CORS_ORIGIN=*
-    volumes:
-      - leaderboard-data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   auth-service:
@@ -58,14 +71,15 @@ services:
       - NODE_ENV=development
       - FRONTEND_URL=http://localhost:5173
       - SERVICE_URL=http://localhost:3003
-      - USERS_PATH=/data/users.json
+      - DATABASE_URL=postgres://magnet_vis:magnet_vis_password@postgres:5432/magnet_vis
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - JWT_SECRET=${JWT_SECRET:-magnet-arena-dev-secret}
-    volumes:
-      - auth-data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   match-history:
@@ -78,10 +92,11 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=development
-      - MATCH_DB_PATH=/data/matches.json
+      - DATABASE_URL=postgres://magnet_vis:magnet_vis_password@postgres:5432/magnet_vis
       - CORS_ORIGIN=*
-    volumes:
-      - match-history-data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   frontend:
@@ -100,6 +115,3 @@ services:
 
 volumes:
   postgres-data:
-  leaderboard-data:
-  auth-data:
-  match-history-data:

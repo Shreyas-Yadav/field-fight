@@ -1,28 +1,27 @@
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
+import { prepareDatabase, truncateTables } from './db.js';
 
-const USERS_FILE = join(tmpdir(), `users-test-${Date.now()}.json`);
 const JWT_SECRET = 'magnet-arena-dev-secret';
 
 let app;
+let pool;
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
-  process.env.USERS_PATH = USERS_FILE;
   process.env.JWT_SECRET = JWT_SECRET;
   process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
   process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
   process.env.GITHUB_CLIENT_ID = 'test-github-client-id';
   process.env.GITHUB_CLIENT_SECRET = 'test-github-client-secret';
-  ({ app } = await import('../auth-service/index.js'));
+  await prepareDatabase();
+  await truncateTables('users');
+  ({ app, pool } = await import('../auth-service/index.js'));
 });
 
 afterAll(async () => {
-  await rm(USERS_FILE, { force: true });
+  await pool.end();
 });
 
 describe('GET /auth/verify', () => {

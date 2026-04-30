@@ -1,14 +1,17 @@
 import express from 'express';
 import cors from 'cors';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 import client from 'prom-client';
+import pg from 'pg';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = process.env.LEADERBOARD_DB_PATH ?? join(__dirname, 'scores.json');
+const { Pool } = pg;
+pg.types.setTypeParser(20, value => Number(value));
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://magnet_vis:magnet_vis_password@127.0.0.1:55432/magnet_vis';
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+});
 
 const logger = pino({
   level: process.env.NODE_ENV === 'test'       ? 'silent'
@@ -42,20 +45,6 @@ const leaderboardInvalidRequestsTotal = new client.Counter({
   registers: [register],
 });
 
-function loadScores() {
-  if (!existsSync(DB_PATH)) return [];
-  try { return JSON.parse(readFileSync(DB_PATH, 'utf8')); } catch { return []; }
-}
-
-function saveScores(scores) {
-  try {
-    writeFileSync(DB_PATH, JSON.stringify(scores, null, 2));
-  } catch (err) {
-    logger.error({ err }, 'Failed to persist scores.json');
-    throw err;
-  }
-}
-
 const app = express();
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 app.use(cors({ origin: CORS_ORIGIN }));
@@ -71,17 +60,28 @@ app.get('/metrics', async (_req, res) => {
   res.end(await register.metrics());
 });
 
-app.get('/api/scores', (req, res) => {
+app.get('/api/scores', async (req, res, next) => {
   const end = leaderboardRequestDuration.startTimer({ method: 'GET', route: '/api/scores' });
-  const rawLimit = parseInt(req.query.limit ?? '20', 10);
-  if (isNaN(rawLimit)) logger.warn({ received: req.query.limit }, 'Invalid limit param, using default');
-  const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
-  const scores = loadScores();
-  res.json(scores.slice(-limit).reverse());
-  end({ status_code: 200 });
+  try {
+    const rawLimit = parseInt(req.query.limit ?? '20', 10);
+    if (isNaN(rawLimit)) logger.warn({ received: req.query.limit }, 'Invalid limit param, using default');
+    const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
+    const { rows } = await pool.query(
+      `SELECT id, winner, game_mode, p0_moves, p1_moves, created_at
+       FROM leaderboard_scores
+       ORDER BY created_at DESC, id DESC
+       LIMIT $1`,
+      [limit],
+    );
+    res.json(rows);
+    end({ status_code: 200 });
+  } catch (err) {
+    end({ status_code: 500 });
+    next(err);
+  }
 });
 
-app.post('/api/scores', (req, res, next) => {
+app.post('/api/scores', async (req, res, next) => {
   const end = leaderboardRequestDuration.startTimer({ method: 'POST', route: '/api/scores' });
   try {
     const { winner, gameMode, p0Moves, p1Moves } = req.body;
@@ -97,20 +97,15 @@ app.post('/api/scores', (req, res, next) => {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    const scores = loadScores();
-    const entry = {
-      id: Date.now(),
-      winner,
-      game_mode: gameMode,
-      p0_moves: p0Moves,
-      p1_moves: p1Moves,
-      created_at: new Date().toISOString(),
-    };
-    scores.push(entry);
-    saveScores(scores);
+    const { rows } = await pool.query(
+      `INSERT INTO leaderboard_scores (winner, game_mode, p0_moves, p1_moves)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [winner, gameMode, p0Moves, p1Moves],
+    );
     leaderboardScoresPostedTotal.inc();
     end({ status_code: 201 });
-    res.status(201).json({ id: entry.id });
+    res.status(201).json({ id: Number(rows[0].id) });
   } catch (err) {
     end({ status_code: 500 });
     next(err);
@@ -132,10 +127,10 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info('SIGTERM received — closing server');
     server.close(() => {
       logger.info('Server closed');
-      process.exit(0);
+      pool.end().finally(() => process.exit(0));
     });
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
-export { app };
+export { app, pool };

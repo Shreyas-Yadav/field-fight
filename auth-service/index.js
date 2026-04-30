@@ -4,15 +4,18 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
 import jwt from 'jsonwebtoken';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 import client from 'prom-client';
+import pg from 'pg';
 
-const __dirname  = dirname(fileURLToPath(import.meta.url));
-const USERS_PATH = process.env.USERS_PATH ?? join(__dirname, 'users.json');
+const { Pool } = pg;
+pg.types.setTypeParser(20, value => Number(value));
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://magnet_vis:magnet_vis_password@127.0.0.1:55432/magnet_vis';
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+});
 
 const JWT_SECRET    = process.env.JWT_SECRET    || 'magnet-arena-dev-secret';
 const FRONTEND_URL  = process.env.FRONTEND_URL  || 'http://localhost:5173';
@@ -51,38 +54,30 @@ const authTokensIssuedTotal = new client.Counter({
   registers: [register],
 });
 
-// ── User store (flat JSON) ────────────────────────────────────────────────────
+// ── User store ────────────────────────────────────────────────────────────────
 
-function loadUsers() {
-  if (!existsSync(USERS_PATH)) return [];
-  try { return JSON.parse(readFileSync(USERS_PATH, 'utf8')); } catch { return []; }
+function mapUser(row) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    providerId: row.provider_id,
+    name: row.name,
+    avatar: row.avatar,
+    createdAt: row.created_at,
+  };
 }
 
-function saveUsers(users) {
-  try {
-    writeFileSync(USERS_PATH, JSON.stringify(users, null, 2));
-  } catch (err) {
-    logger.error({ err }, 'Failed to persist users.json');
-    throw err;
-  }
-}
-
-function upsertUser({ provider, providerId, name, avatar }) {
-  const users = loadUsers();
-  let user = users.find(u => u.provider === provider && u.providerId === providerId);
-  if (!user) {
-    user = {
-      id: `${provider}:${providerId}`,
-      provider,
-      providerId,
-      name,
-      avatar: avatar ?? null,
-      createdAt: new Date().toISOString(),
-    };
-    users.push(user);
-    saveUsers(users);
-  }
-  return user;
+async function upsertUser({ provider, providerId, name, avatar }) {
+  const { rows } = await pool.query(
+    `INSERT INTO users (id, provider, provider_id, name, avatar)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (provider, provider_id) DO UPDATE
+       SET name = EXCLUDED.name,
+           avatar = EXCLUDED.avatar
+     RETURNING id, provider, provider_id, name, avatar, created_at`,
+    [`${provider}:${providerId}`, provider, providerId, name, avatar ?? null],
+  );
+  return mapUser(rows[0]);
 }
 
 // ── Passport strategies ───────────────────────────────────────────────────────
@@ -93,14 +88,18 @@ passport.use(new GoogleStrategy(
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     callbackURL:  `${SERVICE_URL}/auth/google/callback`,
   },
-  (_accessToken, _refreshToken, profile, done) => {
-    const user = upsertUser({
-      provider:   'google',
-      providerId: profile.id,
-      name:       profile.displayName,
-      avatar:     profile.photos?.[0]?.value,
-    });
-    done(null, user);
+  async (_accessToken, _refreshToken, profile, done) => {
+    try {
+      const user = await upsertUser({
+        provider:   'google',
+        providerId: profile.id,
+        name:       profile.displayName,
+        avatar:     profile.photos?.[0]?.value,
+      });
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
   },
 ));
 
@@ -111,14 +110,18 @@ passport.use(new GitHubStrategy(
     callbackURL:  `${SERVICE_URL}/auth/github/callback`,
     state:        false,
   },
-  (_accessToken, _refreshToken, profile, done) => {
-    const user = upsertUser({
-      provider:   'github',
-      providerId: String(profile.id),
-      name:       profile.displayName || profile.username,
-      avatar:     profile.photos?.[0]?.value,
-    });
-    done(null, user);
+  async (_accessToken, _refreshToken, profile, done) => {
+    try {
+      const user = await upsertUser({
+        provider:   'github',
+        providerId: String(profile.id),
+        name:       profile.displayName || profile.username,
+        avatar:     profile.photos?.[0]?.value,
+      });
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
   },
 ));
 
@@ -232,10 +235,10 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info('SIGTERM received — closing server');
     server.close(() => {
       logger.info('Server closed');
-      process.exit(0);
+      pool.end().finally(() => process.exit(0));
     });
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
-export { app };
+export { app, pool };

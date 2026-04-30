@@ -1,14 +1,17 @@
 import express from 'express';
 import cors from 'cors';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 import client from 'prom-client';
+import pg from 'pg';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = process.env.MATCH_DB_PATH ?? join(__dirname, 'matches.json');
+const { Pool } = pg;
+pg.types.setTypeParser(20, value => Number(value));
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://magnet_vis:magnet_vis_password@127.0.0.1:55432/magnet_vis';
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+});
 
 const logger = pino({
   level: process.env.NODE_ENV === 'test'       ? 'silent'
@@ -36,22 +39,6 @@ const matchHistoryRequestDuration = new client.Histogram({
   registers: [register],
 });
 
-// ── Store helpers ─────────────────────────────────────────────────────────────
-
-function loadMatches() {
-  if (!existsSync(DB_PATH)) return [];
-  try { return JSON.parse(readFileSync(DB_PATH, 'utf8')); } catch { return []; }
-}
-
-function saveMatches(matches) {
-  try {
-    writeFileSync(DB_PATH, JSON.stringify(matches, null, 2));
-  } catch (err) {
-    logger.error({ err }, 'Failed to persist matches.json');
-    throw err;
-  }
-}
-
 // ── App ───────────────────────────────────────────────────────────────────────
 
 const app = express();
@@ -70,27 +57,64 @@ app.get('/metrics', async (_req, res) => {
 });
 
 // GET /matches?limit=20 — recent matches
-app.get('/matches', (req, res) => {
+app.get('/matches', async (req, res, next) => {
   const end = matchHistoryRequestDuration.startTimer({ method: 'GET', route: '/matches' });
-  const rawLimit = parseInt(req.query.limit ?? '20', 10);
-  if (isNaN(rawLimit)) logger.warn({ received: req.query.limit }, 'Invalid limit param, using default');
-  const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
-  const matches = loadMatches();
-  res.json(matches.slice(-limit).reverse());
-  end({ status_code: 200 });
+  try {
+    const rawLimit = parseInt(req.query.limit ?? '20', 10);
+    if (isNaN(rawLimit)) logger.warn({ received: req.query.limit }, 'Invalid limit param, using default');
+    const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
+    const { rows } = await pool.query(
+      `SELECT id,
+              p0_id AS "p0Id",
+              p0_name AS "p0Name",
+              p1_id AS "p1Id",
+              p1_name AS "p1Name",
+              winner,
+              game_mode AS "gameMode",
+              p0_moves AS "p0Moves",
+              p1_moves AS "p1Moves",
+              created_at AS "createdAt"
+       FROM matches
+       ORDER BY created_at DESC, id DESC
+       LIMIT $1`,
+      [limit],
+    );
+    res.json(rows);
+    end({ status_code: 200 });
+  } catch (err) {
+    end({ status_code: 500 });
+    next(err);
+  }
 });
 
 // GET /matches/player/:playerId — matches for a specific player
-app.get('/matches/player/:playerId', (req, res) => {
-  const matches = loadMatches();
-  const filtered = matches.filter(
-    m => m.p0Id === req.params.playerId || m.p1Id === req.params.playerId,
-  );
-  res.json(filtered.slice(-20).reverse());
+app.get('/matches/player/:playerId', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id,
+              p0_id AS "p0Id",
+              p0_name AS "p0Name",
+              p1_id AS "p1Id",
+              p1_name AS "p1Name",
+              winner,
+              game_mode AS "gameMode",
+              p0_moves AS "p0Moves",
+              p1_moves AS "p1Moves",
+              created_at AS "createdAt"
+       FROM matches
+       WHERE p0_id = $1 OR p1_id = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 20`,
+      [req.params.playerId],
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /matches — save a new match
-app.post('/matches', (req, res, next) => {
+app.post('/matches', async (req, res, next) => {
   const end = matchHistoryRequestDuration.startTimer({ method: 'POST', route: '/matches' });
   try {
     const { p0Id, p0Name, p1Id, p1Name, winner, gameMode, p0Moves, p1Moves } = req.body;
@@ -100,24 +124,24 @@ app.post('/matches', (req, res, next) => {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    const matches = loadMatches();
-    const entry = {
-      id:        Date.now(),
-      p0Id:      p0Id   ?? null,
-      p0Name:    p0Name ?? 'ALPHA',
-      p1Id:      p1Id   ?? null,
-      p1Name:    p1Name ?? 'BRAVO',
-      winner,
-      gameMode,
-      p0Moves:   p0Moves ?? 0,
-      p1Moves:   p1Moves ?? 0,
-      createdAt: new Date().toISOString(),
-    };
-    matches.push(entry);
-    saveMatches(matches);
+    const { rows } = await pool.query(
+      `INSERT INTO matches (p0_id, p0_name, p1_id, p1_name, winner, game_mode, p0_moves, p1_moves)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        p0Id ?? null,
+        p0Name ?? 'ALPHA',
+        p1Id ?? null,
+        p1Name ?? 'BRAVO',
+        winner,
+        gameMode,
+        p0Moves ?? 0,
+        p1Moves ?? 0,
+      ],
+    );
     matchHistoryMatchesPostedTotal.inc();
     end({ status_code: 201 });
-    res.status(201).json({ id: entry.id });
+    res.status(201).json({ id: Number(rows[0].id) });
   } catch (err) {
     end({ status_code: 500 });
     next(err);
@@ -143,10 +167,10 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info('SIGTERM received — closing server');
     server.close(() => {
       logger.info('Server closed');
-      process.exit(0);
+      pool.end().finally(() => process.exit(0));
     });
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
-export { app };
+export { app, pool };

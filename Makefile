@@ -13,7 +13,9 @@ LEADER_LOG    := $(PID_DIR)/leaderboard-api.log
 AUTH_LOG      := $(PID_DIR)/auth-service.log
 HISTORY_LOG   := $(PID_DIR)/match-history-service.log
 
-.PHONY: start stop restart install logs status observe observe-stop observe-logs test test-watch docker-up docker-down docker-logs docker-build docker-rebuild
+.PHONY: start stop restart install logs status observe observe-stop observe-logs test test-watch db-migrate docker-up docker-down docker-logs docker-build docker-rebuild
+
+DATABASE_URL ?= postgres://magnet_vis:magnet_vis_password@127.0.0.1:55432/magnet_vis
 
 start:
 	@mkdir -p $(PID_DIR)
@@ -44,6 +46,7 @@ restart: stop start
 
 install:
 	@echo "Installing dependencies..."
+	cd $(ROOT)/migrations           && npm install
 	cd $(ROOT)/frontend              && npm install
 	cd $(ROOT)/game-server           && npm install
 	cd $(ROOT)/leaderboard-api       && npm install
@@ -59,6 +62,10 @@ test:
 
 test-watch:
 	@cd $(ROOT)/tests && npm install --silent && npm run test:watch
+
+db-migrate:
+	@echo "Applying database migrations..."
+	@cd $(ROOT)/migrations && DATABASE_URL="$(DATABASE_URL)" npm run migrate
 
 logs:
 	@echo "=== leaderboard-api ===" && tail -n 20 $(LEADER_LOG) 2>/dev/null || echo "(no log)"
@@ -108,7 +115,7 @@ docker-up:
 	@docker compose --env-file .env.local up -d
 	@echo ""
 	@echo "Docker services started."
-	@echo "  postgres              -> localhost:5432"
+	@echo "  postgres              -> localhost:55432"
 	@echo "  frontend              -> http://localhost:5173"
 	@echo "  game-server           -> http://localhost:3001"
 	@echo "  leaderboard-api       -> http://localhost:3002"

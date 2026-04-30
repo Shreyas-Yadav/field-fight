@@ -1,22 +1,19 @@
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
-import { writeFile, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import request from 'supertest';
-
-const DB_FILE = join(tmpdir(), `match-history-test-${Date.now()}.json`);
+import { prepareDatabase, truncateTables } from './db.js';
 
 let app;
+let pool;
 
 beforeAll(async () => {
-  await writeFile(DB_FILE, '[]', 'utf8');
   process.env.NODE_ENV = 'test';
-  process.env.MATCH_DB_PATH = DB_FILE;
-  ({ app } = await import('../match-history-service/index.js'));
+  await prepareDatabase();
+  await truncateTables('matches');
+  ({ app, pool } = await import('../match-history-service/index.js'));
 });
 
 afterAll(async () => {
-  await rm(DB_FILE, { force: true });
+  await pool.end();
 });
 
 describe('GET /matches', () => {
@@ -49,8 +46,7 @@ describe('GET /matches', () => {
   });
 
   it('returns matches newest-first', async () => {
-    await rm(DB_FILE, { force: true });
-    await writeFile(DB_FILE, '[]', 'utf8');
+    await truncateTables('matches');
     for (let i = 0; i < 3; i++) {
       await request(app).post('/matches').send({
         p0Id: 'player0',
@@ -70,8 +66,7 @@ describe('GET /matches', () => {
 
 describe('GET /matches/player/:playerId', () => {
   beforeAll(async () => {
-    await rm(DB_FILE, { force: true });
-    await writeFile(DB_FILE, '[]', 'utf8');
+    await truncateTables('matches');
     for (let i = 0; i < 5; i++) {
       await request(app).post('/matches').send({
         p0Id: i < 2 ? 'alice' : 'bob',
@@ -111,8 +106,7 @@ describe('GET /matches/player/:playerId', () => {
 
 describe('POST /matches', () => {
   beforeAll(async () => {
-    await rm(DB_FILE, { force: true });
-    await writeFile(DB_FILE, '[]', 'utf8');
+    await truncateTables('matches');
   });
 
   it('returns 201 with id for minimal payload', async () => {
