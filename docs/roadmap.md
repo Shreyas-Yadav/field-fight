@@ -30,13 +30,16 @@ Use this checklist as the working order for satisfying the requirements in `outp
 
 ## Phase 3: Container Registry and Image Build Flow
 
-- [ ] Create ECR repositories through Terraform.
-- [ ] Add GitHub Actions workflow to run tests.
-- [ ] Add GitHub Actions workflow step to build the frontend.
-- [ ] Add GitHub Actions workflow steps to build all service Docker images.
+- [x] Add Terraform definitions for ECR repositories.
+- [x] Add GitHub Actions workflow to run tests.
+- [x] Add GitHub Actions workflow step to build the frontend.
+- [x] Add GitHub Actions workflow steps to build all service Docker images.
+- [x] Add ECR publish job for non-PR workflow runs.
+- [x] Use immutable image tags, preferably commit SHA tags.
+- [x] Keep image build separate from Kubernetes deployment.
+- [ ] Apply Terraform to create ECR repositories in AWS.
+- [ ] Configure GitHub repository variables/secrets for LabRole ECR publishing.
 - [ ] Push images to ECR.
-- [ ] Use immutable image tags, preferably commit SHA tags.
-- [ ] Keep image build separate from Kubernetes deployment.
 
 ## Phase 4: Terraform Bootstrap and Core Infrastructure
 

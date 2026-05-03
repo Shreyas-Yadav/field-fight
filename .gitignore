@@ -36,6 +36,14 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+crash.*.log
+
 # Dev tools
 .pids/
 .playwright-mcp/
