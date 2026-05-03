@@ -5,7 +5,8 @@ Phase 3 creates versioned container artifacts, but it does not deploy them.
 ## What This Adds
 
 - ECR repository Terraform in `terraform/ecr`.
-- A GitHub Actions workflow in `.github/workflows/phase-3-images.yml`.
+- A PR checks workflow in `.github/workflows/pr-checks.yml`.
+- A main/manual publish workflow in `.github/workflows/publish-images.yml`.
 - API tests backed by a Postgres service container in CI.
 - Frontend production build verification in CI.
 - Docker builds for all deployable images.
