@@ -4,15 +4,21 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
+.vite/
+coverage/
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!**/.env.example
 
 # Editor
 .vscode/
@@ -30,20 +36,15 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
-
-#Dev Tools
+# Dev tools
 .pids/
-.playwright-mcp/*
+.playwright-mcp/
+.claude/
 
-
-# temp DB JSON files
+# Temp DB JSON files
 leaderboard-api/scores.json
 match-history-service/matches.json
 auth-service/users.json
 
-# Secrets
-auth-service/.env
-
-
-#docs
-docs/
+# Assignment/source material
+output.pdf
