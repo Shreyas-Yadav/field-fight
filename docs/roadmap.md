@@ -43,14 +43,20 @@ Use this checklist as the working order for satisfying the requirements in `outp
 
 ## Phase 4: Terraform Bootstrap and Core Infrastructure
 
-- [ ] Create a one-time Terraform bootstrap stack using local state.
-- [ ] Use the bootstrap stack to create the S3 backend bucket and DynamoDB lock table.
-- [ ] Move all remaining Terraform to S3 remote state with DynamoDB locking.
-- [ ] Add Terraform for VPC, public/private subnets, and NAT.
-- [ ] Add Terraform for security groups.
-- [ ] Add Terraform for EKS and EKS node groups.
-- [ ] Add Terraform for RDS Postgres.
-- [ ] Add Terraform for ECR.
+- [x] Create a one-time Terraform bootstrap stack using local state.
+- [x] Add Terraform for the S3 backend bucket and DynamoDB lock table.
+- [x] Add Terraform backend configuration for environment state.
+- [x] Add Terraform for VPC, public/private subnets, and NAT.
+- [x] Add Terraform for security groups.
+- [x] Add Terraform for RDS Postgres.
+- [x] Add optional Terraform for EKS and EKS node groups using existing role ARNs.
+- [x] Keep ECR Terraform in the existing Phase 3 stack.
+- [x] Apply the bootstrap stack to create the S3 backend bucket and DynamoDB lock table.
+- [x] Move dev Terraform to S3 remote state with S3 lockfile locking.
+- [x] Confirm `LabRole` can be used by EKS control plane and worker nodes.
+- [x] Apply the dev VPC and RDS stack.
+- [x] Apply the dev EKS stack using existing `LabRole` ARNs.
+- [x] Verify EKS worker nodes are Ready with `kubectl get nodes`.
 - [ ] Add Terraform for IAM roles.
 - [ ] Add Terraform for Route53 and ACM.
 - [ ] Create separate environment configs for `dev`, `qa`, `uat`, and `prod`.

@@ -41,6 +41,16 @@ Thumbs.db
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfvars.json
+*.tfplan
+tfplan
+tfplan.*
+**/backend.tf
+!**/backend.tf.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 crash.log
 crash.*.log
 
