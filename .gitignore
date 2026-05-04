@@ -53,6 +53,8 @@ override.tf.json
 *_override.tf.json
 crash.log
 crash.*.log
+k8s/helm/field-fight/values.dev.yaml
+k8s/helm/field-fight/*.local.yaml
 
 # Dev tools
 .pids/

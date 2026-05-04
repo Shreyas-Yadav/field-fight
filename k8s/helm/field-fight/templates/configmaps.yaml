@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "field-fight.fullname" . }}-config
+  labels:
+    {{- include "field-fight.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.config.nodeEnv | quote }}
+  PORT: {{ required "config.port is required" .Values.config.port | quote }}
+  CORS_ORIGIN: {{ .Values.config.corsOrigin | quote }}
+  FRONTEND_URL: {{ required "urls.frontend is required" .Values.urls.frontend | quote }}
+  SERVICE_URL: {{ required "urls.service is required" .Values.urls.service | quote }}
+  DATABASE_SSL: {{ ternary "true" "false" .Values.database.ssl | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "field-fight.fullname" . }}-frontend-nginx
+  labels:
+    {{- include "field-fight.labels" . | nindent 4 }}
+data:
+  default.conf: |
+{{ include "field-fight.frontendNginx" . | indent 4 }}

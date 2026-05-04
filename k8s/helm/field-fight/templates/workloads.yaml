@@ -1,0 +1,85 @@
+{{- $root := . -}}
+{{- range $serviceName, $service := .Values.services }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "field-fight.backendName" (dict "root" $root "service" $serviceName) }}
+  labels:
+    {{- include "field-fight.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $serviceName | quote }}
+spec:
+  replicas: {{ $service.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "field-fight.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $serviceName | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "field-fight.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $serviceName | quote }}
+    spec:
+      containers:
+        - name: {{ $serviceName }}
+          image: {{ include "field-fight.imageRef" (dict "root" $root "image" $service.image) | quote }}
+          imagePullPolicy: {{ $service.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - containerPort: {{ $service.containerPort }}
+              name: http
+          {{- if ne $serviceName "frontend" }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "field-fight.fullname" $root }}-config
+            - secretRef:
+                name: {{ include "field-fight.fullname" $root }}-secrets
+          {{- end }}
+          {{- if eq $serviceName "frontend" }}
+          volumeMounts:
+            - name: frontend-nginx
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ $service.healthPath | quote }}
+              port: http
+            initialDelaySeconds: {{ ternary 15 5 (eq $serviceName "frontend") }}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: {{ $service.healthPath | quote }}
+              port: http
+            initialDelaySeconds: {{ ternary 30 15 (eq $serviceName "frontend") }}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml (index $root.Values.resources $serviceName) | nindent 12 }}
+      {{- if eq $serviceName "frontend" }}
+      volumes:
+        - name: frontend-nginx
+          configMap:
+            name: {{ include "field-fight.fullname" $root }}-frontend-nginx
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "field-fight.backendName" (dict "root" $root "service" $serviceName) }}
+  labels:
+    {{- include "field-fight.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $serviceName | quote }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "field-fight.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $serviceName | quote }}
+  ports:
+    - name: http
+      port: {{ $service.servicePort }}
+      targetPort: http
+      protocol: TCP
+---
+{{- end }}

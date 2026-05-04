@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "field-fight.fullname" . }}-migrations
+  labels:
+    {{- include "field-fight.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "field-fight.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: "migrations"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrations
+          image: {{ include "field-fight.imageRef" (dict "root" . "image" .Values.migrations.image) | quote }}
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy | default "IfNotPresent" }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "field-fight.fullname" . }}-config
+            - secretRef:
+                name: {{ include "field-fight.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.resources.migrations | nindent 12 }}

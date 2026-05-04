@@ -1,0 +1,30 @@
+imageTag: ff7a7e8dac9dafb9aaed7677497f38f2b6ee7f08
+
+registry:
+  accountId: "272772901676"
+  region: us-east-1
+  repositoryPrefix: field-fight
+
+database:
+  host: field-fight-dev-postgres.cjzrv40mvlrb.us-east-1.rds.amazonaws.com
+  port: 5432
+  name: fieldfight
+  user: fieldfight
+  password: CHANGE_ME
+  ssl: true
+
+urls:
+  frontend: http://field-fight-frontend.field-fight-dev.svc.cluster.local
+  service: http://field-fight-auth-service.field-fight-dev.svc.cluster.local
+
+config:
+  nodeEnv: production
+  port: "3000"
+  corsOrigin: "*"
+
+auth:
+  jwtSecret: CHANGE_ME
+  googleClientId: ""
+  googleClientSecret: ""
+  githubClientId: ""
+  githubClientSecret: ""

@@ -57,20 +57,20 @@ Use this checklist as the working order for satisfying the requirements in `outp
 - [x] Apply the dev VPC and RDS stack.
 - [x] Apply the dev EKS stack using existing `LabRole` ARNs.
 - [x] Verify EKS worker nodes are Ready with `kubectl get nodes`.
-- [ ] Add Terraform for IAM roles.
-- [ ] Add Terraform for Route53 and ACM.
-- [ ] Create separate environment configs for `dev`, `qa`, `uat`, and `prod`.
-- [ ] Run Terraform format, validation, and plan per environment.
+- [x] Use existing `LabRole` instead of creating IAM roles because the lab account blocks IAM role creation.
+- [x] Run Terraform format, validation, plan, and apply for bootstrap and `dev`.
+- [x] Defer Route53 and ACM Terraform to Phase 7 with DNS and HTTPS.
+- [x] Defer `qa`, `uat`, and `prod` environment expansion until after the `dev` Kubernetes deployment is proven.
 
 ## Phase 5: Kubernetes App Deployment
 
-- [ ] Create a Helm chart or Kubernetes manifests for the 5 app services.
-- [ ] Add Deployments for all app services.
-- [ ] Add Services for all app services.
-- [ ] Add ConfigMaps and Secret references.
-- [ ] Add readiness and liveness probes.
-- [ ] Add resource requests and limits.
-- [ ] Add environment-specific values for image tags, domains, DB settings, replicas, and resources.
+- [x] Create a Helm chart or Kubernetes manifests for the 5 app services.
+- [x] Add Deployments for all app services.
+- [x] Add Services for all app services.
+- [x] Add ConfigMaps and Secret references.
+- [x] Add readiness and liveness probes.
+- [x] Add resource requests and limits.
+- [x] Add environment-specific values for image tags, domains, DB settings, replicas, and resources.
 - [ ] Deploy once to `dev` as a validation step.
 - [ ] Verify pods, services, health checks, and frontend routing.
 
@@ -92,6 +92,7 @@ Use this checklist as the working order for satisfying the requirements in `outp
 ## Phase 7: DNS and HTTPS
 
 - [ ] Configure AWS Load Balancer Controller.
+- [ ] Add Terraform for Route53 and ACM.
 - [ ] Add frontend ingress.
 - [ ] Use Route53 and ACM for the custom HTTPS frontend domain.
 - [ ] Redirect HTTP to HTTPS.
@@ -100,6 +101,8 @@ Use this checklist as the working order for satisfying the requirements in `outp
 
 ## Phase 8: Git-Driven Promotion
 
+- [ ] Create separate environment configs for `qa`, `uat`, and `prod`.
+- [ ] Run Terraform format, validation, and plan per environment.
 - [ ] Update GitHub Actions so merge to main promotes to `dev`.
 - [ ] Add nightly build flow that promotes a scheduled build to `qa`.
 - [ ] Add RC promotion flow for `uat`.

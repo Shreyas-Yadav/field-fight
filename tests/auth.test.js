@@ -11,10 +11,10 @@ let pool;
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = JWT_SECRET;
-  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
-  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
-  process.env.GITHUB_CLIENT_ID = 'test-github-client-id';
-  process.env.GITHUB_CLIENT_SECRET = 'test-github-client-secret';
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_SECRET;
+  delete process.env.GITHUB_CLIENT_ID;
+  delete process.env.GITHUB_CLIENT_SECRET;
   await prepareDatabase();
   await truncateTables('users');
   ({ app, pool } = await import('../auth-service/index.js'));
@@ -102,6 +102,20 @@ describe('GET /auth/verify', () => {
     expect(res.status).toBe(200);
     expect(res.body.user.customClaim).toBe('custom-value');
     expect(res.body.user.avatar).toBe('https://example.com/avatar.png');
+  });
+});
+
+describe('OAuth routes without configured providers', () => {
+  it('returns 503 for Google login when credentials are absent', async () => {
+    const res = await request(app).get('/auth/google');
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: 'Google OAuth is not configured' });
+  });
+
+  it('returns 503 for GitHub login when credentials are absent', async () => {
+    const res = await request(app).get('/auth/github');
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: 'GitHub OAuth is not configured' });
   });
 });
 
