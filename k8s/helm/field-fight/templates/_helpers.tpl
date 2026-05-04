@@ -40,6 +40,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s:%s" (include "field-fight.imageRepository" (dict "Values" $root.Values "suffix" $image.suffix)) $tag -}}
 {{- end -}}
 
+{{- define "field-fight.imageTag" -}}
+{{- $image := .image -}}
+{{- required "imageTag or service image.tag is required" (default .root.Values.imageTag $image.tag) -}}
+{{- end -}}
+
+{{- define "field-fight.migrationJobName" -}}
+{{- $tag := include "field-fight.imageTag" (dict "root" . "image" .Values.migrations.image) -}}
+{{- printf "%s-migrations-%s" (include "field-fight.fullname" .) ($tag | lower | replace "_" "-" | trunc 12 | trimSuffix "-") | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "field-fight.frontendNginx" -}}
 server {
     listen 80;

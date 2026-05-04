@@ -21,7 +21,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await pool.end();
+  await pool?.end();
 });
 
 describe('GET /auth/verify', () => {

@@ -26,7 +26,7 @@ helm upgrade --install field-fight-dev k8s/helm/field-fight \
 ```sh
 kubectl get pods -n field-fight-dev
 kubectl get svc -n field-fight-dev
-kubectl logs job/field-fight-dev-migrations -n field-fight-dev
+kubectl get jobs -n field-fight-dev
 kubectl port-forward svc/field-fight-dev-frontend 8080:80 -n field-fight-dev
 ```
 
@@ -36,5 +36,7 @@ Then open `http://localhost:8080` and confirm the frontend can reach the in-clus
 
 - The app stack uses cluster-local service DNS names for nginx proxying.
 - The OAuth login flow is not fully public until the DNS and HTTPS phase adds an external domain.
-- `values.dev.yaml` needs the RDS password and OAuth client credentials filled in before install.
+- `values.dev.yaml` needs the RDS password and a `jwtSecret` filled in before install.
+- OAuth client credentials can stay empty until the DNS and HTTPS phase.
+- The migration Job name includes the image tag so image upgrades create a fresh Job instead of trying to mutate an existing completed Job.
 - Keep `values.dev.yaml` out of git; the root `.gitignore` already ignores it.

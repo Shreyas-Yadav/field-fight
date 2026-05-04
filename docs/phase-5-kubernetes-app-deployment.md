@@ -11,7 +11,7 @@ Phase 5 turns the EKS cluster into a running application platform.
 - Secrets for database and auth credentials.
 - Readiness and liveness probes.
 - Resource requests and limits.
-- A migrations Job that runs before install and upgrade.
+- A migrations Job that runs with the deployed app image tag.
 
 ## How It Fits
 
@@ -21,7 +21,7 @@ Phase 3 built images and published them to ECR. Phase 4 built the cluster, netwo
 
 - EKS cluster: `field-fight-dev-eks`
 - RDS endpoint: `field-fight-dev-postgres.cjzrv40mvlrb.us-east-1.rds.amazonaws.com:5432`
-- Image tag scaffolded in the chart: `ff7a7e8dac9dafb9aaed7677497f38f2b6ee7f08`
+- Image tag supplied through `k8s/helm/field-fight/values.dev.yaml`.
 
 ## Validation Order
 

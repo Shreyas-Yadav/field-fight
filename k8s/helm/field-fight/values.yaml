@@ -1,8 +1,8 @@
-imageTag: "4c8d48da1b72e032a524fc9c8d78455de864f56e"
+imageTag: ""
 
 registry:
-  accountId: "272772901676"
-  region: "us-east-1"
+  accountId: ""
+  region: ""
   repositoryPrefix: field-fight
 
 database:
@@ -121,6 +121,7 @@ services:
     healthPath: /health
 
 migrations:
+  ttlSecondsAfterFinished: 86400
   image:
     suffix: migrations
     tag: ""
