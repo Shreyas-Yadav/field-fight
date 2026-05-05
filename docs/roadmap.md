@@ -104,14 +104,14 @@ Use this checklist as the working order for satisfying the requirements in `outp
 
 - [ ] Create separate environment configs for `qa`, `uat`, and `prod`.
 - [ ] Run Terraform format, validation, and plan per environment.
-- [ ] Update GitHub Actions so merge to main promotes to `dev`.
+- [x] Update GitHub Actions so merge to main promotes to `dev`.
 - [ ] Add nightly build flow that promotes a scheduled build to `qa`.
 - [ ] Add RC promotion flow for `uat`.
 - [ ] Add release-tag promotion flow for `prod`, such as `v1.0.1`.
-- [ ] Make GitHub Actions update Git-tracked Helm values or manifests.
-- [ ] Let Argo CD perform the actual EKS deployment.
+- [x] Make GitHub Actions update Git-tracked Helm values or manifests.
+- [x] Let Argo CD perform the actual EKS deployment.
 - [ ] Ensure production release tags update prod desired state in Git.
-- [ ] Confirm no manual AWS Console deployment is needed.
+- [x] Confirm no manual AWS Console deployment is needed.
 
 ## Phase 9: Observability and Logging
 
