@@ -92,13 +92,13 @@ Use this checklist as the working order for satisfying the requirements in `outp
 
 ## Phase 7: DNS and HTTPS
 
-- [ ] Configure AWS Load Balancer Controller.
+- [x] Configure AWS Load Balancer Controller.
 - [x] Add Terraform for Route53 and ACM.
 - [x] Add frontend ingress.
-- [ ] Use Route53 and ACM for the custom HTTPS frontend domain.
-- [ ] Redirect HTTP to HTTPS.
-- [ ] Update auth callback URLs to use the HTTPS domain.
-- [ ] Verify the frontend is reachable through the custom domain.
+- [x] Use Route53 and ACM for the custom HTTPS frontend domain.
+- [x] Redirect HTTP to HTTPS.
+- [x] Update auth callback URLs to use the HTTPS domain.
+- [x] Verify the frontend is reachable through the custom domain.
 
 ## Phase 8: Git-Driven Promotion
 
