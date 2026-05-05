@@ -195,6 +195,60 @@ variable "gitops_target_revision" {
   default     = "main"
 }
 
+variable "domain_name" {
+  description = "Base DNS domain for the dev app."
+  type        = string
+  default     = "shri.software"
+}
+
+variable "frontend_hostname" {
+  description = "Public hostname for the dev frontend."
+  type        = string
+  default     = "field-fight-dev.shri.software"
+}
+
+variable "create_route53_zone" {
+  description = "Create a Route53 public hosted zone for the base domain."
+  type        = bool
+  default     = false
+}
+
+variable "create_frontend_certificate" {
+  description = "Create an ACM certificate for the frontend hostname."
+  type        = bool
+  default     = false
+}
+
+variable "validate_frontend_certificate" {
+  description = "Wait for ACM DNS validation to complete. Enable only after the domain is delegated to Route53."
+  type        = bool
+  default     = false
+}
+
+variable "install_aws_load_balancer_controller" {
+  description = "Install AWS Load Balancer Controller into the EKS cluster."
+  type        = bool
+  default     = false
+}
+
+variable "aws_load_balancer_controller_chart_version" {
+  description = "AWS Load Balancer Controller Helm chart version."
+  type        = string
+  default     = "3.2.2"
+}
+
+variable "frontend_alb_dns_name" {
+  description = "ALB DNS name reported by the frontend Ingress. Set after AWS Load Balancer Controller creates the ALB."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_alb_zone_id" {
+  description = "ALB canonical hosted zone ID reported by AWS. Set with frontend_alb_dns_name to create the Route53 alias."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Additional tags to apply to resources."
   type        = map(string)

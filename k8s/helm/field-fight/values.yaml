@@ -33,6 +33,13 @@ secrets:
   create: true
   existingSecret: ""
 
+ingress:
+  enabled: false
+  className: alb
+  host: ""
+  certificateArn: ""
+  annotations: {}
+
 resources:
   frontend:
     requests:

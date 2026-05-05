@@ -14,8 +14,8 @@ database:
   ssl: true
 
 urls:
-  frontend: http://field-fight-dev-frontend.field-fight-dev.svc.cluster.local
-  service: http://field-fight-dev-auth-service.field-fight-dev.svc.cluster.local
+  frontend: https://field-fight-dev.shri.software
+  service: https://field-fight-dev.shri.software
 
 config:
   nodeEnv: production
@@ -32,3 +32,10 @@ auth:
 secrets:
   create: false
   existingSecret: field-fight-dev-secrets
+
+ingress:
+  enabled: false
+  className: alb
+  host: field-fight-dev.shri.software
+  certificateArn: ""
+  annotations: {}

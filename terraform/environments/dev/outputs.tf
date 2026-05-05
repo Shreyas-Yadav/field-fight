@@ -38,3 +38,23 @@ output "eks_cluster_endpoint" {
   value       = try(aws_eks_cluster.this[0].endpoint, null)
   sensitive   = true
 }
+
+output "route53_zone_id" {
+  description = "Route53 hosted zone ID for the base domain."
+  value       = try(aws_route53_zone.primary[0].zone_id, null)
+}
+
+output "route53_name_servers" {
+  description = "Route53 nameservers to configure at the domain registrar."
+  value       = try(aws_route53_zone.primary[0].name_servers, [])
+}
+
+output "frontend_certificate_arn" {
+  description = "ACM certificate ARN for the frontend hostname."
+  value       = try(aws_acm_certificate.frontend[0].arn, null)
+}
+
+output "frontend_hostname" {
+  description = "Public frontend hostname."
+  value       = var.frontend_hostname
+}
