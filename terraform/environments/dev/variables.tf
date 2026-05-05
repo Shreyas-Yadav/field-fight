@@ -162,13 +162,13 @@ variable "eks_node_min_size" {
 variable "eks_node_desired_size" {
   description = "Desired EKS node count."
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "eks_node_max_size" {
   description = "Maximum EKS node count."
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "install_argocd" {
@@ -213,6 +213,12 @@ variable "grafana_hostname" {
   default     = "grafana-dev.shri.software"
 }
 
+variable "argocd_hostname" {
+  description = "Public hostname for the Argo CD Git webhook endpoint."
+  type        = string
+  default     = "argocd-dev.shri.software"
+}
+
 variable "create_route53_zone" {
   description = "Create a Route53 public hosted zone for the base domain."
   type        = bool
@@ -231,6 +237,12 @@ variable "create_grafana_certificate" {
   default     = false
 }
 
+variable "create_argocd_webhook_certificate" {
+  description = "Create an ACM certificate for the Argo CD Git webhook hostname."
+  type        = bool
+  default     = false
+}
+
 variable "validate_frontend_certificate" {
   description = "Wait for ACM DNS validation to complete. Enable only after the domain is delegated to Route53."
   type        = bool
@@ -241,6 +253,24 @@ variable "validate_grafana_certificate" {
   description = "Wait for Grafana ACM DNS validation to complete. Enable only after Route53 validation records exist."
   type        = bool
   default     = false
+}
+
+variable "validate_argocd_webhook_certificate" {
+  description = "Wait for Argo CD webhook ACM DNS validation to complete. Enable only after Route53 validation records exist."
+  type        = bool
+  default     = false
+}
+
+variable "enable_argocd_webhook_ingress" {
+  description = "Expose the Argo CD /api/webhook endpoint through an HTTPS ALB Ingress."
+  type        = bool
+  default     = false
+}
+
+variable "argocd_webhook_certificate_arn" {
+  description = "ACM certificate ARN used by the Argo CD webhook ALB Ingress."
+  type        = string
+  default     = ""
 }
 
 variable "install_aws_load_balancer_controller" {
@@ -275,6 +305,18 @@ variable "grafana_alb_dns_name" {
 
 variable "grafana_alb_zone_id" {
   description = "ALB canonical hosted zone ID reported by AWS. Set with grafana_alb_dns_name to create the Route53 alias."
+  type        = string
+  default     = ""
+}
+
+variable "argocd_webhook_alb_dns_name" {
+  description = "ALB DNS name reported by the Argo CD webhook Ingress."
+  type        = string
+  default     = ""
+}
+
+variable "argocd_webhook_alb_zone_id" {
+  description = "ALB canonical hosted zone ID reported by AWS. Set with argocd_webhook_alb_dns_name to create the Route53 alias."
   type        = string
   default     = ""
 }
