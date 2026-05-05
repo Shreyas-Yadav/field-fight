@@ -207,6 +207,12 @@ variable "frontend_hostname" {
   default     = "field-fight-dev.shri.software"
 }
 
+variable "grafana_hostname" {
+  description = "Public hostname for the dev Grafana instance."
+  type        = string
+  default     = "grafana-dev.shri.software"
+}
+
 variable "create_route53_zone" {
   description = "Create a Route53 public hosted zone for the base domain."
   type        = bool
@@ -219,8 +225,20 @@ variable "create_frontend_certificate" {
   default     = false
 }
 
+variable "create_grafana_certificate" {
+  description = "Create an ACM certificate for the Grafana hostname."
+  type        = bool
+  default     = false
+}
+
 variable "validate_frontend_certificate" {
   description = "Wait for ACM DNS validation to complete. Enable only after the domain is delegated to Route53."
+  type        = bool
+  default     = false
+}
+
+variable "validate_grafana_certificate" {
+  description = "Wait for Grafana ACM DNS validation to complete. Enable only after Route53 validation records exist."
   type        = bool
   default     = false
 }
@@ -245,6 +263,18 @@ variable "frontend_alb_dns_name" {
 
 variable "frontend_alb_zone_id" {
   description = "ALB canonical hosted zone ID reported by AWS. Set with frontend_alb_dns_name to create the Route53 alias."
+  type        = string
+  default     = ""
+}
+
+variable "grafana_alb_dns_name" {
+  description = "ALB DNS name reported by the Grafana Ingress. Set after AWS Load Balancer Controller creates the ALB."
+  type        = string
+  default     = ""
+}
+
+variable "grafana_alb_zone_id" {
+  description = "ALB canonical hosted zone ID reported by AWS. Set with grafana_alb_dns_name to create the Route53 alias."
   type        = string
   default     = ""
 }

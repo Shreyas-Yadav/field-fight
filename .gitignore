@@ -55,6 +55,7 @@ crash.log
 crash.*.log
 k8s/helm/field-fight/values.dev.yaml
 k8s/helm/field-fight/*.local.yaml
+k8s/helm/*/charts/*.tgz
 
 # Dev tools
 .pids/

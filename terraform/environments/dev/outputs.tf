@@ -58,3 +58,13 @@ output "frontend_hostname" {
   description = "Public frontend hostname."
   value       = var.frontend_hostname
 }
+
+output "grafana_certificate_arn" {
+  description = "ACM certificate ARN for the Grafana hostname."
+  value       = try(aws_acm_certificate.grafana[0].arn, null)
+}
+
+output "grafana_hostname" {
+  description = "Public Grafana hostname."
+  value       = var.grafana_hostname
+}
