@@ -88,7 +88,7 @@ Use this checklist as the working order for satisfying the requirements in `outp
 - [ ] Configure Argo CD auto-sync for `qa`.
 - [ ] Configure Argo CD auto-sync for `uat`.
 - [ ] Configure production sync to be release-tag driven through Git, not Argo CD UI clicks.
-- [ ] Verify Argo CD detects drift and restores desired state.
+- [x] Verify Argo CD detects drift and restores desired state.
 
 ## Phase 7: DNS and HTTPS
 
