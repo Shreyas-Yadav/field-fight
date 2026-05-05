@@ -12,6 +12,8 @@ resource "helm_release" "aws_load_balancer_controller" {
       clusterName = aws_eks_cluster.this[0].name
       region      = var.aws_region
       vpcId       = module.vpc.vpc_id
+      hostNetwork = true
+      dnsPolicy   = "ClusterFirstWithHostNet"
 
       serviceAccount = {
         create = true
