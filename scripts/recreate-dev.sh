@@ -162,7 +162,7 @@ phase_up() {
     -var="install_aws_load_balancer_controller=false" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=true" \
+    -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=false" \
     -var="validate_grafana_certificate=false" \
     -var="eks_cluster_role_arn=${role_arn}" \
@@ -233,9 +233,9 @@ phase_validate() {
     -var="install_aws_load_balancer_controller=false" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=true" \
+    -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=true" \
+    -var="validate_grafana_certificate=false" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
@@ -263,9 +263,9 @@ phase_gitops() {
     -var="install_aws_load_balancer_controller=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=true" \
+    -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=true" \
+    -var="validate_grafana_certificate=false" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
@@ -309,9 +309,9 @@ phase_finish() {
     -var="install_aws_load_balancer_controller=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=true" \
+    -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=true" \
+    -var="validate_grafana_certificate=false" \
     -var="frontend_alb_dns_name=${frontend_alb_dns_name}" \
     -var="frontend_alb_zone_id=${frontend_alb_zone_id}" \
     -var="eks_cluster_role_arn=${role_arn}" \
