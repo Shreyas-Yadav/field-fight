@@ -15,7 +15,8 @@ source of truth into Git.
 
 - Repo URL: `https://github.com/Shreyas-Yadav/field-fight.git`
 - Target revision: `main`
-- Root app path: `gitops/apps`
+- Root app manifest: `gitops/root.yaml`
+- Root app watches path: `gitops/apps`
 - Dev app chart path: `k8s/helm/field-fight`
 - Dev app values path: `gitops/environments/dev/values.yaml`
 - Dev namespace: `field-fight-dev`
@@ -55,6 +56,9 @@ terraform apply \
   -var='eks_cluster_role_arn=arn:aws:iam::272772901676:role/LabRole' \
   -var='eks_node_role_arn=arn:aws:iam::272772901676:role/LabRole'
 ```
+
+Terraform installs the Argo CD Helm chart first, then applies `gitops/root.yaml`
+after the Argo CD `Application` CRD exists.
 
 3. Verify Argo CD:
 

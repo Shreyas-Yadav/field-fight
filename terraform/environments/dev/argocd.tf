@@ -33,43 +33,23 @@ resource "helm_release" "argocd" {
           type = "ClusterIP"
         }
       }
-
-      extraObjects = [
-        {
-          apiVersion = "argoproj.io/v1alpha1"
-          kind       = "Application"
-          metadata = {
-            name      = "field-fight-root"
-            namespace = "argocd"
-            finalizers = [
-              "resources-finalizer.argocd.argoproj.io",
-            ]
-          }
-          spec = {
-            project = "default"
-            source = {
-              repoURL        = var.gitops_repo_url
-              targetRevision = var.gitops_target_revision
-              path           = "gitops/apps"
-            }
-            destination = {
-              server    = "https://kubernetes.default.svc"
-              namespace = "argocd"
-            }
-            syncPolicy = {
-              automated = {
-                prune    = true
-                selfHeal = true
-              }
-              syncOptions = [
-                "CreateNamespace=true",
-              ]
-            }
-          }
-        },
-      ]
     }),
   ]
 
   depends_on = [kubernetes_namespace.argocd]
+}
+
+resource "terraform_data" "argocd_root_app" {
+  count = var.create_eks && var.install_argocd ? 1 : 0
+
+  triggers_replace = [
+    var.gitops_repo_url,
+    var.gitops_target_revision,
+  ]
+
+  provisioner "local-exec" {
+    command = "kubectl apply -f ../../../gitops/root.yaml"
+  }
+
+  depends_on = [helm_release.argocd]
 }
