@@ -71,19 +71,20 @@ Use this checklist as the working order for satisfying the requirements in `outp
 - [x] Add readiness and liveness probes.
 - [x] Add resource requests and limits.
 - [x] Add environment-specific values for image tags, domains, DB settings, replicas, and resources.
-- [ ] Deploy once to `dev` as a validation step.
-- [ ] Verify pods, services, health checks, and frontend routing.
+- [x] Deploy once to `dev` as a validation step.
+- [x] Verify pods, services, health checks, and frontend routing.
 
 ## Phase 6: Argo CD GitOps
 
 - [ ] Install Argo CD into EKS through Terraform.
-- [ ] Add app-of-apps structure.
-- [ ] Add a root Argo CD application.
-- [ ] Add `dev`, `uat`, and `prod` Argo CD applications.
+- [x] Add app-of-apps structure.
+- [x] Add a root Argo CD application.
+- [x] Add a `dev` Argo CD application.
+- [ ] Add `uat` and `prod` Argo CD applications.
 - [ ] Add a `qa` Argo CD application for nightly builds.
 - [ ] Add an observability Argo CD application.
-- [ ] Store desired Kubernetes state in this repo.
-- [ ] Configure Argo CD auto-sync for `dev`.
+- [x] Store desired Kubernetes state in this repo.
+- [x] Configure Argo CD auto-sync for `dev`.
 - [ ] Configure Argo CD auto-sync for `qa`.
 - [ ] Configure Argo CD auto-sync for `uat`.
 - [ ] Configure production sync to be release-tag driven through Git, not Argo CD UI clicks.

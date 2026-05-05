@@ -68,3 +68,6 @@ auth-service/users.json
 
 # Assignment/source material
 output.pdf
+
+# Local resume notes
+docs/resume-work.md

@@ -150,7 +150,7 @@ variable "eks_cluster_version" {
 variable "eks_node_instance_types" {
   description = "EC2 instance types for the default EKS managed node group."
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t3.small"]
 }
 
 variable "eks_node_min_size" {
@@ -169,6 +169,30 @@ variable "eks_node_max_size" {
   description = "Maximum EKS node count."
   type        = number
   default     = 3
+}
+
+variable "install_argocd" {
+  description = "Install Argo CD into the EKS cluster."
+  type        = bool
+  default     = false
+}
+
+variable "argocd_chart_version" {
+  description = "Argo CD Helm chart version."
+  type        = string
+  default     = "9.5.11"
+}
+
+variable "gitops_repo_url" {
+  description = "Git repository URL that Argo CD should watch."
+  type        = string
+  default     = "https://github.com/Shreyas-Yadav/field-fight.git"
+}
+
+variable "gitops_target_revision" {
+  description = "Git revision that Argo CD should sync."
+  type        = string
+  default     = "main"
 }
 
 variable "tags" {

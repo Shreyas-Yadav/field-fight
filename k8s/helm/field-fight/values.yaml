@@ -29,6 +29,10 @@ auth:
   githubClientId: ""
   githubClientSecret: ""
 
+secrets:
+  create: true
+  existingSecret: ""
+
 resources:
   frontend:
     requests:

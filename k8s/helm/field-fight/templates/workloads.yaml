@@ -31,7 +31,7 @@ spec:
             - configMapRef:
                 name: {{ include "field-fight.fullname" $root }}-config
             - secretRef:
-                name: {{ include "field-fight.fullname" $root }}-secrets
+                name: {{ include "field-fight.secretName" $root }}
           {{- end }}
           {{- if eq $serviceName "frontend" }}
           volumeMounts:

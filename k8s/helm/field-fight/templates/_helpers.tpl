@@ -26,6 +26,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-%s" (include "field-fight.fullname" .root) .service -}}
 {{- end -}}
 
+{{- define "field-fight.secretName" -}}
+{{- default (printf "%s-secrets" (include "field-fight.fullname" .)) .Values.secrets.existingSecret -}}
+{{- end -}}
+
 {{- define "field-fight.imageRepository" -}}
 {{- $accountId := required "registry.accountId is required" .Values.registry.accountId -}}
 {{- $region := required "registry.region is required" .Values.registry.region -}}

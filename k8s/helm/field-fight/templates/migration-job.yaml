@@ -22,6 +22,6 @@ spec:
             - configMapRef:
                 name: {{ include "field-fight.fullname" . }}-config
             - secretRef:
-                name: {{ include "field-fight.fullname" . }}-secrets
+                name: {{ include "field-fight.secretName" . }}
           resources:
             {{- toYaml .Values.resources.migrations | nindent 12 }}
