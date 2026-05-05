@@ -76,7 +76,7 @@ Use this checklist as the working order for satisfying the requirements in `outp
 
 ## Phase 6: Argo CD GitOps
 
-- [ ] Install Argo CD into EKS through Terraform.
+- [x] Install Argo CD into EKS through Terraform.
 - [x] Add app-of-apps structure.
 - [x] Add a root Argo CD application.
 - [x] Add a `dev` Argo CD application.
