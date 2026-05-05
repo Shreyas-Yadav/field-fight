@@ -1,191 +1,160 @@
 # Magnet Vis AWS/EKS Requirement Roadmap
 
-Use this checklist as the working order for satisfying the requirements in `output.pdf`.
+Use this checklist as the working order for satisfying `output.pdf`. Keep the
+baseline app stable first, then add the remaining graded capabilities in small
+steps.
 
-## Phase 1: Local App Foundation
+## Requirement Summary
 
-- [x] Confirm the current app works locally.
-- [x] Keep the 5-service Docker setup stable: `frontend`, `game-server`, `leaderboard-api`, `auth-service`, and `match-history`.
-- [x] Add local Postgres to `docker-compose.yml`.
-- [x] Update `make docker-up` so the local app and Postgres start together.
-- [x] Verify the frontend production build passes.
-- [x] Verify backend tests pass.
-- [x] Verify all backend services expose `/health`.
-- [x] Verify all backend services expose `/metrics`.
+- Application must have a frontend, AWS RDS database, and at least 3 backend
+  microservices.
+- Frontend must be reachable through a custom DNS name with HTTPS.
+- AWS resources such as EKS, RDS, and VPC must be managed through Terraform.
+- Day 1 setup and Day 2 updates must be automated.
+- Promotion flow must be Git-driven: `dev -> nightly QA -> UAT -> prod`.
+- Dev/QA to UAT promotion must be triggered by pull request merges or
+  conventional commit/RC signals.
+- UAT to prod must be triggered by release labels or tags such as `v1.0.1`.
+- Manual click-to-deploy in the AWS Console is prohibited.
+- Choose and justify either blue/green or canary on EKS.
+- Promotions and Day 2 updates must avoid dropped requests.
+- Day 2 demos must include worker node OS/security patching and an RDS schema
+  change.
+- Observability must be self-hosted in EKS: Prometheus, Grafana, OAuth2 access,
+  dashboards, alerts, and centralized backend log queries.
 
-## Phase 2: Replace JSON Storage With Postgres
+## Phase 1: Stable Application Baseline
 
-- [x] Add shared database connection handling for backend services.
-- [x] Convert `leaderboard-api` from JSON file storage to Postgres.
-- [x] Convert `match-history-service` from JSON file storage to Postgres.
-- [x] Convert `auth-service` user storage from JSON file storage to Postgres.
-- [x] Add migration tooling for initial Postgres schema setup.
-- [x] Design migrations so they can later run through Argo CD `PreSync` Kubernetes Jobs in production.
-- [x] Use expand-first migrations so old and new app versions can run safely during rollout.
-- [x] Create the initial users table migration.
-- [x] Create the initial leaderboard scores table migration.
-- [x] Create the initial match history table migration.
-- [x] Update tests to run against Postgres.
-- [x] Verify existing APIs still behave the same from the frontend's perspective.
+- [x] Keep the app working locally with Docker Compose and local Postgres.
+- [x] Keep the frontend plus backend services stable: `frontend`,
+  `game-server`, `leaderboard-api`, `auth-service`, and
+  `match-history-service`.
+- [x] Replace JSON storage with Postgres for auth, leaderboard, and match
+  history.
+- [x] Add migration tooling for the initial Postgres schema.
+- [x] Expose `/health` and `/metrics` on backend services.
+- [x] Verify frontend build and backend tests.
+- [x] Keep local development separate from AWS deployment concerns.
 
-## Phase 3: Container Registry and Image Build Flow
+## Phase 2: AWS Infrastructure and Runtime
 
-- [x] Add Terraform definitions for ECR repositories.
-- [x] Add GitHub Actions workflow to run tests.
-- [x] Add GitHub Actions workflow step to build the frontend.
-- [x] Add GitHub Actions workflow steps to build all service Docker images.
-- [x] Add ECR publish job for non-PR workflow runs.
-- [x] Use immutable image tags, preferably commit SHA tags.
-- [x] Keep image build separate from Kubernetes deployment.
-- [x] Apply Terraform to create ECR repositories in AWS.
-- [x] Configure GitHub repository variables/secrets for LabRole ECR publishing.
-- [x] Push images to ECR.
+- [x] Create ECR repositories with Terraform.
+- [x] Build and push immutable Docker images tagged by commit SHA.
+- [x] Create Terraform bootstrap resources: S3 state bucket and lock table.
+- [x] Create VPC, public/private/database subnets, NAT, security groups, and RDS
+  Postgres through Terraform.
+- [x] Create EKS and managed node groups through Terraform using the lab
+  `LabRole` ARNs.
+- [x] Use `t3.medium` worker nodes for dev to avoid pod-capacity issues.
+- [x] Create Route53 hosted zone and ACM certificates through Terraform.
+- [x] Deploy AWS Load Balancer Controller through Terraform.
+- [x] Verify nodes are Ready and the RDS-backed app starts successfully.
 
-## Phase 4: Terraform Bootstrap and Core Infrastructure
+## Phase 3: Dev GitOps and HTTPS
 
-- [x] Create a one-time Terraform bootstrap stack using local state.
-- [x] Add Terraform for the S3 backend bucket and DynamoDB lock table.
-- [x] Add Terraform backend configuration for environment state.
-- [x] Add Terraform for VPC, public/private subnets, and NAT.
-- [x] Add Terraform for security groups.
-- [x] Add Terraform for RDS Postgres.
-- [x] Add optional Terraform for EKS and EKS node groups using existing role ARNs.
-- [x] Keep ECR Terraform in the existing Phase 3 stack.
-- [x] Apply the bootstrap stack to create the S3 backend bucket and DynamoDB lock table.
-- [x] Move dev Terraform to S3 remote state with S3 lockfile locking.
-- [x] Confirm `LabRole` can be used by EKS control plane and worker nodes.
-- [x] Apply the dev VPC and RDS stack.
-- [x] Apply the dev EKS stack using existing `LabRole` ARNs.
-- [x] Verify EKS worker nodes are Ready with `kubectl get nodes`.
-- [x] Use existing `LabRole` instead of creating IAM roles because the lab account blocks IAM role creation.
-- [x] Run Terraform format, validation, plan, and apply for bootstrap and `dev`.
-- [x] Defer Route53 and ACM Terraform to Phase 7 with DNS and HTTPS.
-- [x] Defer `qa`, `uat`, and `prod` environment expansion until after the `dev` Kubernetes deployment is proven.
+- [x] Create the Helm chart for the app services.
+- [x] Add Kubernetes Deployments, Services, ConfigMaps, Secrets, probes, and
+  resource requests/limits.
+- [x] Deploy migration Job through Kubernetes/Argo CD.
+- [x] Install Argo CD through Terraform.
+- [x] Add app-of-apps root application.
+- [x] Add the `dev` Argo CD application.
+- [x] Configure `dev` auto-sync and self-heal.
+- [x] Expose the frontend through ALB Ingress.
+- [x] Serve the frontend at `https://field-fight-dev.shri.software`.
+- [x] Verify `field-fight-dev` is `Synced` and `Healthy`.
+- [x] Remove observability from active GitOps until Phase 7 so the app baseline
+  remains clean.
 
-## Phase 5: Kubernetes App Deployment
+## Phase 4: Git-Driven Promotion Environments
 
-- [x] Create a Helm chart or Kubernetes manifests for the 5 app services.
-- [x] Add Deployments for all app services.
-- [x] Add Services for all app services.
-- [x] Add ConfigMaps and Secret references.
-- [x] Add readiness and liveness probes.
-- [x] Add resource requests and limits.
-- [x] Add environment-specific values for image tags, domains, DB settings, replicas, and resources.
-- [x] Deploy once to `dev` as a validation step.
-- [x] Verify pods, services, health checks, and frontend routing.
+- [ ] Add GitOps values/apps for `qa`, `uat`, and `prod`.
+- [ ] Keep environment differences in values files, not hand-edited manifests.
+- [ ] Add nightly GitHub Actions promotion from `dev` image tag to `qa`.
+- [ ] Add UAT promotion triggered by pull request merge or RC-style conventional
+  commit signal.
+- [ ] Add prod promotion triggered only by release tag or release label, such as
+  `v1.0.1`.
+- [ ] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD does
+  the cluster deployment.
+- [ ] Add Terraform format/validate/plan checks for environment changes.
+- [ ] Document the promotion chain for the final demo.
 
-## Phase 6: Argo CD GitOps
+## Phase 5: Zero-Downtime Release Strategy
 
-- [x] Install Argo CD into EKS through Terraform.
-- [x] Add app-of-apps structure.
-- [x] Add a root Argo CD application.
-- [x] Add a `dev` Argo CD application.
-- [ ] Add `uat` and `prod` Argo CD applications.
-- [ ] Add a `qa` Argo CD application for nightly builds.
-- [ ] Add an observability Argo CD application.
-- [x] Store desired Kubernetes state in this repo.
-- [x] Configure Argo CD auto-sync for `dev`.
-- [ ] Configure Argo CD auto-sync for `qa`.
-- [ ] Configure Argo CD auto-sync for `uat`.
-- [ ] Configure production sync to be release-tag driven through Git, not Argo CD UI clicks.
-- [x] Verify Argo CD detects drift and restores desired state.
+- [ ] Use **blue/green** for the EKS release strategy.
+- [ ] Justify blue/green: simple demo, fast rollback, clear before/after
+  traffic switch, and less operational complexity than canary.
+- [ ] Add blue and green variants for production workloads.
+- [ ] Route traffic only to the active color through Git-managed Kubernetes
+  desired state.
+- [ ] Keep the inactive color running until the new color passes readiness
+  checks.
+- [ ] Configure graceful shutdown and ALB deregistration delay.
+- [ ] Add PodDisruptionBudgets for services that should stay available.
+- [ ] Demonstrate rollback by reverting Git desired state.
+- [ ] Verify promotion causes zero dropped requests during the demo.
 
-## Phase 7: DNS and HTTPS
+## Phase 6: Mandatory Day 2 Scenarios
 
-- [x] Configure AWS Load Balancer Controller.
-- [x] Add Terraform for Route53 and ACM.
-- [x] Add frontend ingress.
-- [x] Use Route53 and ACM for the custom HTTPS frontend domain.
-- [x] Redirect HTTP to HTTPS.
-- [x] Update auth callback URLs to use the HTTPS domain.
-- [x] Verify the frontend is reachable through the custom domain.
+- [ ] OS/security patching: update EKS managed node group version or launch
+  template through Terraform.
+- [ ] Show Kubernetes drains or replaces worker nodes while workloads reschedule.
+- [ ] Verify app remains reachable during node replacement.
+- [ ] Schema change: add a small backward-compatible RDS migration.
+- [ ] Use `duration_seconds` on match history as the recommended schema-change
+  field.
+- [ ] Deploy schema migration through an Argo CD migration Job.
+- [ ] Deploy backend code that can read both old and new rows.
+- [ ] Verify old rows still load and new writes include the new field.
+- [ ] Document the stability reasoning for both Day 2 demos.
 
-## Phase 8: Git-Driven Promotion
+## Phase 7: Self-Hosted Observability and Logging
 
-- [ ] Create separate environment configs for `qa`, `uat`, and `prod`.
-- [ ] Run Terraform format, validation, and plan per environment.
-- [x] Update GitHub Actions so merge to main promotes to `dev`.
-- [ ] Add nightly build flow that promotes a scheduled build to `qa`.
-- [ ] Add RC promotion flow for `uat`.
-- [ ] Add release-tag promotion flow for `prod`, such as `v1.0.1`.
-- [x] Make GitHub Actions update Git-tracked Helm values or manifests.
-- [x] Let Argo CD perform the actual EKS deployment.
-- [ ] Ensure production release tags update prod desired state in Git.
-- [x] Confirm no manual AWS Console deployment is needed.
+- [ ] Reintroduce observability as a separate Argo CD application after the app
+  and promotion path are stable.
+- [ ] Deploy Prometheus and Grafana inside EKS; do not use AWS managed
+  observability services.
+- [ ] Start minimal: Prometheus, Grafana, kube-state-metrics, node-exporter, and
+  ServiceMonitors.
+- [ ] Add dashboards for node CPU, node memory, disk space, pods, request rate,
+  latency, and 5xx responses.
+- [ ] Expose Grafana externally through HTTPS.
+- [ ] Protect Grafana with GitHub OAuth2; username/password login is prohibited.
+- [ ] Add Alertmanager Slack notifications for critical CPU, memory, disk, pod,
+  and app-health thresholds.
+- [ ] Add Loki and Promtail for centralized logs across all backend
+  microservices.
+- [ ] Use ephemeral Loki storage in the AWS lab for reliability; document that
+  production should use S3 or EBS-backed durable storage.
+- [ ] Verify dashboards, alerts, and centralized log queries before final demo.
 
-## Phase 9: Observability and Logging
-
-- [ ] Deploy Prometheus inside EKS through Argo CD.
-- [ ] Deploy Grafana inside EKS through Argo CD.
-- [ ] Protect Grafana with OAuth2.
-- [ ] Add dashboards for node CPU, node memory, disk, pods, service latency, request rate, and 5xx responses.
-- [ ] Add alerts for critical thresholds.
-- [ ] Deploy Loki/Promtail or ELK/OpenSearch inside EKS.
-- [ ] Verify centralized log queries across all backend microservices.
-- [ ] Verify dashboards and logs are ready before Day 2 demonstrations.
-
-## Phase 10: Blue/Green Deployment
-
-- [ ] Implement blue/green production deployment.
-- [ ] Keep the old version alive while the new version becomes healthy.
-- [ ] Switch traffic only after readiness checks pass.
-- [ ] Configure graceful shutdown for all backend services.
-- [ ] Configure ALB deregistration delay and connection draining.
-- [ ] Add PodDisruptionBudgets for services that need continuous availability.
-- [ ] Verify Socket.IO game sessions drain cleanly during production switchovers.
-- [ ] Add rollback procedure by reverting Git desired state.
-- [ ] Demonstrate zero dropped requests during promotion.
-
-## Phase 11: Production OS/Security Patching
-
-- [ ] Confirm the initial production app is live on EKS and serving traffic through the custom HTTPS domain.
-- [ ] Confirm Prometheus, Grafana, alerts, and centralized logs are working.
-- [ ] Plan an EKS managed node group AMI or Kubernetes patch update.
-- [ ] Apply the node group update through Terraform.
-- [ ] Verify Kubernetes drains old nodes safely.
-- [ ] Verify replacement nodes join the cluster and workloads reschedule.
-- [ ] Use dashboards and logs to prove service continuity during patching.
-- [ ] Demonstrate zero dropped requests during the node patching scenario.
-- [ ] Document this as the OS/security patching Day 2 scenario.
-
-## Phase 12: Production Day 2 Schema Change
-
-- [ ] Confirm the initial production app is live on EKS and serving traffic through the custom HTTPS domain.
-- [ ] Confirm Prometheus, Grafana, alerts, and centralized logs are working.
-- [ ] Confirm production services are using AWS RDS Postgres.
-- [ ] Add one realistic schema migration after production is live.
-- [ ] Use `duration_seconds` on match history as the recommended Day 2 change.
-- [ ] Update backend write logic to support the new field.
-- [ ] Update backend read logic to support old rows and new rows.
-- [ ] Deploy the migration as an Argo CD `PreSync` Kubernetes Job.
-- [ ] Deploy the backend through GitHub Actions image promotion and Argo CD sync.
-- [ ] Verify existing production rows still load correctly.
-- [ ] Verify new production writes include the new field.
-- [ ] Demonstrate that the schema change required no manual AWS Console edits.
-- [ ] Demonstrate zero dropped requests during the schema-change rollout.
-- [ ] Document this as the Day 2 schema change scenario.
-
-## Phase 13: Final Demo Preparation
+## Phase 8: Final Demo Preparation
 
 - [ ] Prepare a demo script mapped directly to `output.pdf`.
-- [ ] Show Terraform-managed infrastructure.
-- [ ] Show the app running on EKS.
-- [ ] Show RDS-backed persistence.
-- [ ] Show the custom HTTPS frontend.
-- [ ] Show GitHub Actions build and promotion.
-- [ ] Show Argo CD sync and drift correction.
-- [ ] Show the Day 2 schema change.
-- [ ] Show node patching or node group replacement.
-- [ ] Show Grafana dashboards, alerts, OAuth access, and centralized logs.
+- [ ] Show the app architecture: frontend, RDS, and at least 3 backend
+  microservices.
+- [ ] Show Terraform-managed ECR, VPC, RDS, EKS, Route53, and ACM.
+- [ ] Show GitHub Actions building images and updating GitOps desired state.
+- [ ] Show Argo CD syncing the app from Git.
+- [ ] Show custom HTTPS frontend access.
+- [ ] Show blue/green or rollback behavior with zero dropped requests.
+- [ ] Show OS/security patching through Terraform.
+- [ ] Show RDS schema migration through Argo CD.
+- [ ] Show Grafana OAuth login, dashboards, Slack alert path, and centralized log
+  queries.
 
-## Assumptions
+## Defaults and Constraints
 
-- Postgres will be used locally and AWS RDS Postgres will be used in AWS.
-- Terraform will manage all AWS infrastructure.
-- GitHub Actions will handle build and promotion automation.
-- Argo CD will handle Kubernetes deployment sync.
-- App code, Terraform, and GitOps desired state will live in this repo.
-- Argo CD will use an app-of-apps structure.
-- `dev`, `qa`, and `uat` will auto-sync; `prod` will be release-controlled through Git.
-- Production deployment will use blue/green.
-- Production migrations will run as Argo CD `PreSync` Kubernetes Jobs.
+- AWS region: `us-east-1`.
+- Database: AWS RDS Postgres only.
+- Infrastructure source of truth: Terraform.
+- Kubernetes source of truth: GitOps through Argo CD.
+- Image tags: immutable commit SHAs.
+- Dev node size: `t3.medium`.
+- Deployment strategy: blue/green.
+- Alert channel: Slack.
+- Dev Loki storage: ephemeral, because AWS Lab EBS CSI permissions are
+  unreliable.
+- Production Loki storage recommendation: S3 or EBS once IAM/storage
+  prerequisites are available.
