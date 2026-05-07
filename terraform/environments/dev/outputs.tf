@@ -68,3 +68,8 @@ output "grafana_hostname" {
   description = "Public Grafana hostname."
   value       = var.grafana_hostname
 }
+
+output "additional_certificate_arns" {
+  description = "Map of environment name to ACM cert ARN for qa/uat/prod (or any additional envs sharing the dev ALB)."
+  value       = { for k, v in aws_acm_certificate.additional : k => v.arn }
+}

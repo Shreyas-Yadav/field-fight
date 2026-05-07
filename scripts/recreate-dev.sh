@@ -113,6 +113,61 @@ path.write_text(text)
 PY
 }
 
+update_additional_env_values() {
+  # Read terraform output `additional_certificate_arns` (a JSON map of
+  # env_name -> cert ARN) and patch each env's values.yaml to:
+  #   - ingress.enabled: true
+  #   - ingress.certificateArn: <arn>
+  # Skips envs whose values.yaml already has the correct ARN (idempotent).
+
+  local arns_json
+  arns_json="$(terraform -chdir="$DEV_DIR" output -json additional_certificate_arns 2>/dev/null || echo '{}')"
+
+  if [[ "$arns_json" == "{}" || -z "$arns_json" ]]; then
+    echo "No additional certificates found in terraform output (additional_environments empty?)"
+    return 0
+  fi
+
+  echo "Updating qa/uat/prod values.yaml with cert ARNs..."
+
+  python3 - "$ROOT" "$arns_json" <<'PY'
+import json, re, sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+arns = json.loads(sys.argv[2])
+
+for env, arn in arns.items():
+    values_file = root / f"gitops/environments/{env}/values.yaml"
+    if not values_file.exists():
+        print(f"  [{env}] values file missing, skipping: {values_file}")
+        continue
+    text = values_file.read_text()
+
+    # Update ingress.enabled to true
+    text, count_enabled = re.subn(
+        r'(\bingress:\s*\n(?:  .*\n)*?  enabled:\s*).*',
+        r'\1true',
+        text,
+        count=1,
+    )
+    # Update ingress.certificateArn
+    text, count_cert = re.subn(
+        r'(\bingress:\s*\n(?:  .*\n)*?  certificateArn:\s*).*',
+        rf'\1{arn}',
+        text,
+        count=1,
+    )
+
+    if count_enabled == 0 or count_cert == 0:
+        print(f"  [{env}] could not patch ingress block in {values_file}")
+        sys.exit(1)
+
+    values_file.write_text(text)
+    print(f"  [{env}] enabled ingress with cert {arn[-20:]}")
+PY
+}
+
 wait_for_ingress_hostname() {
   local deadline=$((SECONDS + INGRESS_WAIT_SECONDS))
   local hostname=""
@@ -244,17 +299,25 @@ phase_validate() {
     -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
     -var="validate_grafana_certificate=false" \
+    -var="validate_additional_certificates=true" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
     -var="eks_node_desired_size=${EKS_NODE_DESIRED_SIZE}" \
     -var="eks_node_max_size=${EKS_NODE_MAX_SIZE}"
 
+  # Patch qa/uat/prod values.yaml with the freshly-validated cert ARNs.
+  update_additional_env_values
+
   echo
   echo "============================================================"
   echo "  PHASE 'validate' COMPLETE — what to do next:"
   echo "============================================================"
-  echo "  Install Argo CD and the AWS Load Balancer Controller:"
+  echo "  1. Review and commit the updated values files:"
+  echo "       git diff gitops/environments"
+  echo "       git add gitops/environments && git commit -m 'feat: enable HTTPS ingress for qa/uat/prod' && git push"
+  echo
+  echo "  2. Install Argo CD and the AWS Load Balancer Controller:"
   echo "       $0 gitops"
   echo "============================================================"
 }
@@ -279,6 +342,7 @@ phase_gitops() {
     -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
     -var="validate_grafana_certificate=false" \
+    -var="validate_additional_certificates=true" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
@@ -340,6 +404,7 @@ phase_finish() {
     -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
     -var="validate_grafana_certificate=false" \
+    -var="validate_additional_certificates=true" \
     -var="frontend_alb_dns_name=${frontend_alb_dns_name}" \
     -var="frontend_alb_zone_id=${frontend_alb_zone_id}" \
     -var="eks_cluster_role_arn=${role_arn}" \

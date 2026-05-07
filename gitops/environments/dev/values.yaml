@@ -38,4 +38,5 @@ ingress:
   className: alb
   host: field-fight-dev.shri.software
   certificateArn: arn:aws:acm:us-east-1:272772901676:certificate/add088d8-2103-4f42-b65b-7a49cd1d3c63
+  groupName: field-fight
   annotations: {}

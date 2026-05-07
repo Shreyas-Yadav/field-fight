@@ -267,6 +267,21 @@ variable "frontend_alb_zone_id" {
   default     = ""
 }
 
+variable "additional_environments" {
+  description = "Additional environments (qa/uat/prod) that need their own ACM cert and Route53 alias. They share the dev ALB via the ingress group."
+  type = list(object({
+    name     = string
+    hostname = string
+  }))
+  default = []
+}
+
+variable "validate_additional_certificates" {
+  description = "Wait for ACM DNS validation for each entry in additional_environments. Enable only after the domain is delegated to Route53."
+  type        = bool
+  default     = false
+}
+
 variable "grafana_alb_dns_name" {
   description = "ALB DNS name reported by the Grafana Ingress. Set after AWS Load Balancer Controller creates the ALB."
   type        = string

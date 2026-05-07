@@ -42,6 +42,8 @@ Thumbs.db
 *.tfstate.*
 *.tfvars
 *.tfvars.json
+# Multi-env hostname config has no secrets, commit it
+!terraform/environments/dev/multi-env.auto.tfvars
 *.tfplan
 tfplan
 tfplan.*

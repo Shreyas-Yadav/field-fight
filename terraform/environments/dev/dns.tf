@@ -113,3 +113,74 @@ resource "aws_route53_record" "grafana_alias" {
     zone_id                = var.grafana_alb_zone_id
   }
 }
+
+# -----------------------------------------------------------------------------
+# Additional environments (qa/uat/prod) — share the same ALB as dev via the
+# ingress group annotation. Each gets its own ACM cert and Route53 A-record
+# alias pointing at the shared ALB.
+# -----------------------------------------------------------------------------
+
+locals {
+  additional_envs_map = { for env in var.additional_environments : env.name => env }
+}
+
+resource "aws_acm_certificate" "additional" {
+  for_each = local.additional_envs_map
+
+  domain_name       = each.value.hostname
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge(local.common_tags, {
+    Phase       = "dns-https"
+    Environment = each.key
+  })
+}
+
+# Flatten validation options across all additional envs into a single map.
+resource "aws_route53_record" "additional_certificate_validation" {
+  for_each = var.create_route53_zone ? merge([
+    for env_name, env in local.additional_envs_map : {
+      for opt in aws_acm_certificate.additional[env_name].domain_validation_options :
+      "${env_name}:${opt.domain_name}" => {
+        name   = opt.resource_record_name
+        record = opt.resource_record_value
+        type   = opt.resource_record_type
+      }
+    }
+  ]...) : {}
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = aws_route53_zone.primary[0].zone_id
+}
+
+resource "aws_acm_certificate_validation" "additional" {
+  for_each = var.validate_additional_certificates ? local.additional_envs_map : {}
+
+  certificate_arn = aws_acm_certificate.additional[each.key].arn
+  validation_record_fqdns = [
+    for k, r in aws_route53_record.additional_certificate_validation :
+    r.fqdn if startswith(k, "${each.key}:")
+  ]
+}
+
+resource "aws_route53_record" "additional_alias" {
+  for_each = var.create_route53_zone && var.frontend_alb_dns_name != "" && var.frontend_alb_zone_id != "" ? local.additional_envs_map : {}
+
+  name    = each.value.hostname
+  type    = "A"
+  zone_id = aws_route53_zone.primary[0].zone_id
+
+  alias {
+    evaluate_target_health = true
+    name                   = var.frontend_alb_dns_name
+    zone_id                = var.frontend_alb_zone_id
+  }
+}
