@@ -11,8 +11,8 @@ SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$ROOT/secrets.env}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 LAB_ROLE_NAME="${LAB_ROLE_NAME:-LabRole}"
 EKS_NODE_TYPE="${EKS_NODE_TYPE:-t3.medium}"
-EKS_NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-2}"
-EKS_NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-3}"
+EKS_NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-3}"
+EKS_NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-4}"
 INGRESS_NAMESPACE="${INGRESS_NAMESPACE:-field-fight-dev}"
 INGRESS_NAME="${INGRESS_NAME:-field-fight-dev-frontend}"
 INGRESS_WAIT_SECONDS="${INGRESS_WAIT_SECONDS:-900}"
@@ -33,8 +33,8 @@ Environment:
   AWS_REGION            default: us-east-1
   LAB_ROLE_NAME         default: LabRole
   EKS_NODE_TYPE         default: t3.medium
-  EKS_NODE_DESIRED_SIZE default: 2
-  EKS_NODE_MAX_SIZE     default: 3
+  EKS_NODE_DESIRED_SIZE default: 3
+  EKS_NODE_MAX_SIZE     default: 4
   AUTO_APPROVE          default: false
   SECRETS_ENV_FILE      default: <repo-root>/secrets.env
 
@@ -289,17 +289,45 @@ phase_validate() {
   role_arn="arn:aws:iam::${account_id}:role/${LAB_ROLE_NAME}"
 
   init_dev_backend
+
+  # Refresh kubeconfig so Terraform's K8s/Helm providers can reach the cluster.
+  # If EKS isn't up yet (first run), this is a no-op.
+  if aws eks describe-cluster --name "field-fight-${ENVIRONMENT:-dev}-eks" --region "$AWS_REGION" >/dev/null 2>&1; then
+    aws eks update-kubeconfig \
+      --region "$AWS_REGION" \
+      --name "field-fight-${ENVIRONMENT:-dev}-eks" >/dev/null
+  fi
+
+  # If the dev ingress already exists, capture its ALB DNS so we don't
+  # destroy the existing Route53 alias when re-running validate.
+  local existing_alb_dns="" existing_alb_zone=""
+  if kubectl get ingress -n "$INGRESS_NAMESPACE" "$INGRESS_NAME" >/dev/null 2>&1; then
+    existing_alb_dns="$(kubectl -n "$INGRESS_NAMESPACE" get ingress "$INGRESS_NAME" \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+    if [[ -n "$existing_alb_dns" ]]; then
+      existing_alb_zone="$(aws elbv2 describe-load-balancers \
+        --region "$AWS_REGION" \
+        --query "LoadBalancers[?DNSName=='${existing_alb_dns}'].CanonicalHostedZoneId | [0]" \
+        --output text 2>/dev/null || true)"
+      [[ "$existing_alb_zone" == "None" ]] && existing_alb_zone=""
+    fi
+  fi
+
+  # Use the same flags as gitops/finish so re-running validate is idempotent
+  # and won't roll back ArgoCD, the LBC, or the dev Route53 alias.
   apply_tf "$DEV_DIR" \
     -var="aws_region=${AWS_REGION}" \
     -var="create_eks=true" \
-    -var="install_argocd=false" \
-    -var="install_aws_load_balancer_controller=false" \
+    -var="install_argocd=true" \
+    -var="install_aws_load_balancer_controller=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
     -var="create_grafana_certificate=false" \
     -var="validate_frontend_certificate=true" \
     -var="validate_grafana_certificate=false" \
     -var="validate_additional_certificates=true" \
+    -var="frontend_alb_dns_name=${existing_alb_dns}" \
+    -var="frontend_alb_zone_id=${existing_alb_zone}" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \

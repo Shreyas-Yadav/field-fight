@@ -25,16 +25,12 @@ data "aws_eks_cluster" "this" {
   count = var.create_eks ? 1 : 0
 
   name = aws_eks_cluster.this[0].name
-
-  depends_on = [aws_eks_node_group.default]
 }
 
 data "aws_eks_cluster_auth" "this" {
   count = var.create_eks ? 1 : 0
 
   name = aws_eks_cluster.this[0].name
-
-  depends_on = [aws_eks_node_group.default]
 }
 
 provider "kubernetes" {

@@ -34,9 +34,9 @@ secrets:
   existingSecret: field-fight-prod-secrets
 
 ingress:
-  enabled: false
+  enabled: true
   className: alb
   host: field-fight.shri.software
-  certificateArn: ""
+  certificateArn: arn:aws:acm:us-east-1:272772901676:certificate/c3dcd5c3-f2a1-4756-aa7a-cc380049745c
   groupName: field-fight
   annotations: {}
