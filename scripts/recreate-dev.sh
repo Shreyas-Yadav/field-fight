@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEV_DIR="$ROOT/terraform/environments/dev"
 ECR_DIR="$ROOT/terraform/ecr"
 VALUES_FILE="$ROOT/gitops/environments/dev/values.yaml"
+SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$ROOT/secrets.env}"
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 LAB_ROLE_NAME="${LAB_ROLE_NAME:-LabRole}"
@@ -24,6 +25,7 @@ Usage:
   scripts/recreate-dev.sh ecr
   scripts/recreate-dev.sh validate
   scripts/recreate-dev.sh gitops
+  scripts/recreate-dev.sh secrets
   scripts/recreate-dev.sh finish
 
 Environment:
@@ -34,6 +36,7 @@ Environment:
   EKS_NODE_DESIRED_SIZE default: 2
   EKS_NODE_MAX_SIZE     default: 3
   AUTO_APPROVE          default: false
+  SECRETS_ENV_FILE      default: <repo-root>/secrets.env
 
 Notes:
   - "up" recreates ECR and dev core infra including RDS and EKS,
@@ -45,6 +48,9 @@ Notes:
     the Route53 nameservers printed by "up".
   - "gitops" installs Argo CD and the AWS Load Balancer Controller after the
     updated GitOps values and Kubernetes secrets are ready.
+  - "secrets" reads SECRETS_ENV_FILE and creates the field-fight-<env>-secrets
+    Kubernetes Secret in the field-fight-dev namespace. See secrets.env.example
+    for the required keys.
   - "finish" waits for the frontend ingress, discovers the ALB DNS/zone ID, and
     applies the Route53 alias record.
 EOF
@@ -183,14 +189,23 @@ phase_up() {
   echo "Local file updated:"
   echo "  gitops/environments/dev/values.yaml"
   echo
-  echo "Next steps:"
-  echo "  1. Update GitHub AWS secrets for the fresh lab account and push images to ECR."
-  echo "  2. Delegate your domain to the Route53 nameservers above."
-  echo "  3. Run: $0 validate"
-  echo "  4. Commit and push the gitops values change."
-  echo "  5. Recreate Kubernetes secrets for the app and Grafana."
-  echo "  6. Run: $0 gitops"
-  echo "  7. Run: $0 finish"
+  echo "============================================================"
+  echo "  PHASE 'up' COMPLETE — what to do next:"
+  echo "============================================================"
+  echo "  1. Delegate your domain to the Route53 nameservers above."
+  echo "     Wait for DNS propagation (5-15 min). Verify with:"
+  echo "       dig +short NS shri.software"
+  echo
+  echo "  2. Commit the auto-updated values.yaml and push:"
+  echo "       git add gitops/environments/dev/values.yaml"
+  echo "       git commit -m 'chore: update dev values for fresh AWS account'"
+  echo "       git push"
+  echo
+  echo "  3. Update GitHub AWS secrets so Actions can push to ECR."
+  echo
+  echo "  4. Once DNS is propagated, run:"
+  echo "       $0 validate"
+  echo "============================================================"
 }
 
 phase_ecr() {
@@ -201,7 +216,12 @@ phase_ecr() {
     -var="aws_region=${AWS_REGION}"
 
   echo
-  echo "ECR repositories are ready."
+  echo "============================================================"
+  echo "  PHASE 'ecr' COMPLETE — what to do next:"
+  echo "============================================================"
+  echo "  - GitHub Actions can now push images to ECR."
+  echo "  - If running the full deploy, continue with: $0 up"
+  echo "============================================================"
 }
 
 phase_validate() {
@@ -231,7 +251,12 @@ phase_validate() {
     -var="eks_node_max_size=${EKS_NODE_MAX_SIZE}"
 
   echo
-  echo "ACM certificates are validated."
+  echo "============================================================"
+  echo "  PHASE 'validate' COMPLETE — what to do next:"
+  echo "============================================================"
+  echo "  Install Argo CD and the AWS Load Balancer Controller:"
+  echo "       $0 gitops"
+  echo "============================================================"
 }
 
 phase_gitops() {
@@ -265,7 +290,22 @@ phase_gitops() {
     --name "$(terraform -chdir="$DEV_DIR" output -raw eks_cluster_name)"
 
   echo
-  echo "Argo CD and AWS Load Balancer Controller are installed."
+  echo "============================================================"
+  echo "  PHASE 'gitops' COMPLETE — what to do next:"
+  echo "============================================================"
+  echo "  1. (One-time) Copy the secrets template and fill in real values:"
+  echo "       cp secrets.env.example secrets.env"
+  echo "       \$EDITOR secrets.env"
+  echo
+  echo "  2. Apply Kubernetes secrets and run database migration:"
+  echo "       $0 secrets"
+  echo
+  echo "  3. (First deploy only) Bootstrap the Argo CD root app:"
+  echo "       kubectl apply -f gitops/root.yaml"
+  echo
+  echo "  4. Once pods are Running:"
+  echo "       $0 finish"
+  echo "============================================================"
 }
 
 phase_finish() {
@@ -309,9 +349,183 @@ phase_finish() {
     -var="eks_node_max_size=${EKS_NODE_MAX_SIZE}"
 
   echo
-  echo "Frontend ALB:"
-  echo "  DNS:    ${frontend_alb_dns_name}"
-  echo "  ZoneID: ${frontend_alb_zone_id}"
+  echo "============================================================"
+  echo "  PHASE 'finish' COMPLETE — deployment is live!"
+  echo "============================================================"
+  echo "  Frontend ALB:"
+  echo "    DNS:    ${frontend_alb_dns_name}"
+  echo "    ZoneID: ${frontend_alb_zone_id}"
+  echo
+  echo "  Verify the app:"
+  echo "       bash scripts/dev-status.sh"
+  echo "       curl -I https://field-fight-dev.shri.software"
+  echo
+  echo "  Open in browser:"
+  echo "       https://field-fight-dev.shri.software"
+  echo "============================================================"
+}
+
+read_db_value_from_values() {
+  # Reads a key under the top-level `database:` block in values.yaml.
+  # Usage: read_db_value_from_values <key>
+  python3 - "$VALUES_FILE" "$1" <<'PY'
+import re, sys
+path, key = sys.argv[1], sys.argv[2]
+text = open(path).read()
+m = re.search(rf'^database:\s*\n((?:  .*\n)+)', text, re.M)
+if not m:
+    sys.exit(f"could not find 'database:' block in {path}")
+block = m.group(1)
+m = re.search(rf'^  {key}:\s*(.+?)\s*$', block, re.M)
+if not m:
+    sys.exit(f"could not find database.{key} in {path}")
+val = m.group(1).strip().strip('"').strip("'")
+print(val)
+PY
+}
+
+phase_secrets() {
+  need_cmd kubectl
+  need_cmd python3
+
+  if [[ ! -f "$SECRETS_ENV_FILE" ]]; then
+    echo "secrets env file not found: $SECRETS_ENV_FILE" >&2
+    echo "Copy secrets.env.example to secrets.env and fill in real values." >&2
+    exit 1
+  fi
+
+  # Source the env file in a subshell-safe way: only reads KEY=VALUE lines.
+  set -a
+  # shellcheck disable=SC1090
+  . "$SECRETS_ENV_FILE"
+  set +a
+
+  local missing=()
+  for var in DB_PASSWORD JWT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET; do
+    if [[ -z "${!var:-}" ]]; then
+      missing+=("$var")
+    fi
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    echo "missing required keys in $SECRETS_ENV_FILE: ${missing[*]}" >&2
+    exit 1
+  fi
+
+  local db_host db_port db_name db_user database_url
+  db_host="$(read_db_value_from_values host)"
+  db_port="$(read_db_value_from_values port)"
+  db_name="$(read_db_value_from_values name)"
+  db_user="$(read_db_value_from_values user)"
+
+  if [[ -z "$db_host" || -z "$db_port" || -z "$db_name" || -z "$db_user" ]]; then
+    echo "could not read all database.* fields from $VALUES_FILE" >&2
+    exit 1
+  fi
+
+  database_url="postgres://${db_user}:${DB_PASSWORD}@${db_host}:${db_port}/${db_name}"
+
+  local namespace="$INGRESS_NAMESPACE"
+  local secret_name="field-fight-dev-secrets"
+
+  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl create secret generic "$secret_name" \
+    --namespace="$namespace" \
+    --from-literal=DATABASE_URL="$database_url" \
+    --from-literal=DB_PASSWORD="$DB_PASSWORD" \
+    --from-literal=JWT_SECRET="$JWT_SECRET" \
+    --from-literal=GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+    --from-literal=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+    --from-literal=GITHUB_CLIENT_ID="$GITHUB_CLIENT_ID" \
+    --from-literal=GITHUB_CLIENT_SECRET="$GITHUB_CLIENT_SECRET" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  echo
+  echo "Secret '${secret_name}' applied in namespace '${namespace}' (host=${db_host})."
+
+  # Restart all app deployments so pods re-read the refreshed secret.
+  # Existing pods do NOT pick up new secret keys without a restart.
+  if kubectl -n "$namespace" get deployments >/dev/null 2>&1; then
+    local deployments
+    deployments="$(kubectl -n "$namespace" get deployments -o name 2>/dev/null || true)"
+    if [[ -n "$deployments" ]]; then
+      echo "Restarting deployments to pick up new secret values..."
+      kubectl -n "$namespace" rollout restart deployment
+    fi
+  fi
+
+  # Delete any existing migration jobs and their pods so a fresh one runs
+  # against the refreshed secret. Jobs are matched by name prefix because
+  # the parent Job resource does not carry the component=migrations label
+  # (only the pod template does).
+  local old_jobs
+  old_jobs="$(kubectl -n "$namespace" get jobs -o name 2>/dev/null \
+    | grep -E "/field-fight-.*-migrations(-[a-z0-9]+)?$" || true)"
+  if [[ -n "$old_jobs" ]]; then
+    echo "Deleting old migration jobs:"
+    echo "$old_jobs"
+    # shellcheck disable=SC2086
+    kubectl -n "$namespace" delete $old_jobs --ignore-not-found
+  fi
+
+  # Also delete any leftover migration pods (orphaned from prior failed jobs).
+  kubectl -n "$namespace" delete pods \
+    -l app.kubernetes.io/component=migrations \
+    --ignore-not-found
+
+  # Force ArgoCD to recreate the Job immediately rather than waiting for the
+  # next reconcile loop.
+  if kubectl get application field-fight-dev -n argocd >/dev/null 2>&1; then
+    echo "Triggering ArgoCD refresh of field-fight-dev..."
+    kubectl -n argocd patch application field-fight-dev \
+      --type merge \
+      -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' >/dev/null
+  fi
+
+  echo
+  echo "Waiting up to 5 minutes for a fresh migration pod to complete..."
+  local deadline=$((SECONDS + 300))
+  local mig_pod="" phase=""
+  while (( SECONDS < deadline )); do
+    mig_pod="$(kubectl -n "$namespace" get pods -l app.kubernetes.io/component=migrations \
+      --sort-by=.metadata.creationTimestamp \
+      -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)"
+    if [[ -n "$mig_pod" ]]; then
+      phase="$(kubectl -n "$namespace" get pod "$mig_pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+      case "$phase" in
+        Succeeded)
+          echo "Migration pod '$mig_pod' succeeded."
+          echo "Waiting for app deployments to finish rolling out..."
+          kubectl -n "$namespace" rollout status deployment --timeout=300s || true
+          echo
+          echo "============================================================"
+          echo "  PHASE 'secrets' COMPLETE — what to do next:"
+          echo "============================================================"
+          echo "  1. (First deploy only) Apply the Argo CD root app:"
+          echo "       kubectl apply -f gitops/root.yaml"
+          echo
+          echo "  2. Wait for the frontend ingress, then:"
+          echo "       $0 finish"
+          echo "============================================================"
+          return 0
+          ;;
+        Failed)
+          echo "Migration pod '$mig_pod' failed. Recent logs:" >&2
+          kubectl -n "$namespace" logs "$mig_pod" 2>&1 | tail -30 >&2 || true
+          exit 1
+          ;;
+        Running|Pending)
+          # keep waiting
+          ;;
+      esac
+    fi
+    sleep 5
+  done
+
+  echo "Migration job did not complete within timeout. Inspect with:" >&2
+  echo "  kubectl get pods -n $namespace -l app.kubernetes.io/component=migrations" >&2
+  exit 1
 }
 
 main() {
@@ -329,6 +543,9 @@ main() {
       ;;
     gitops)
       phase_gitops
+      ;;
+    secrets)
+      phase_secrets
       ;;
     finish)
       phase_finish

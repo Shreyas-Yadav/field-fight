@@ -70,3 +70,6 @@ output.pdf
 
 # Local resume notes
 docs/resume-work.md
+
+# Local secrets for `recreate-dev.sh secrets`
+secrets.env
