@@ -13,24 +13,13 @@ be used by EKS and the worker nodes. The EKS resources are intentionally minimal
 native AWS resources because the standard EKS module calls IAM role inspection
 APIs that this lab account blocks.
 
-Before the bootstrap stack exists, initialize locally:
+Terraform state is stored locally — there is no S3 backend.
 
 ```sh
 cd terraform/environments/dev
 terraform init
-```
-
-After running `terraform/bootstrap`, enable the S3 backend using
-`backend.tf.example` and initialize the real remote backend with:
-
-```sh
-cp backend.tf.example backend.tf
-terraform init \
-  -backend-config="bucket=<state-bucket>" \
-  -backend-config="region=us-east-1" \
-  -backend-config="key=env/dev/terraform.tfstate" \
-  -backend-config="encrypt=true" \
-  -backend-config="use_lockfile=true"
+export TF_VAR_db_password="<strong-password>"
+terraform plan
 ```
 
 Do not commit local `.tfvars` files or generated Terraform state.

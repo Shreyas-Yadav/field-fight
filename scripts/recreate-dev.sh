@@ -3,7 +3,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOOTSTRAP_DIR="$ROOT/terraform/bootstrap"
 DEV_DIR="$ROOT/terraform/environments/dev"
 ECR_DIR="$ROOT/terraform/ecr"
 VALUES_FILE="$ROOT/gitops/environments/dev/values.yaml"
@@ -26,10 +25,9 @@ Usage:
   scripts/recreate-dev.sh validate
   scripts/recreate-dev.sh gitops
   scripts/recreate-dev.sh finish
-  scripts/recreate-dev.sh secrets
 
 Environment:
-  TF_VAR_db_password    required for up/validate/gitops/finish/secrets
+  TF_VAR_db_password    required
   AWS_REGION            default: us-east-1
   LAB_ROLE_NAME         default: LabRole
   EKS_NODE_TYPE         default: t3.medium
@@ -37,15 +35,11 @@ Environment:
   EKS_NODE_MAX_SIZE     default: 3
   AUTO_APPROVE          default: false
 
-  Secrets phase also reads (all optional, leave blank if not configured):
-  APP_JWT_SECRET        JWT signing secret
-  APP_GOOGLE_CLIENT_ID / APP_GOOGLE_CLIENT_SECRET
-  APP_GITHUB_CLIENT_ID / APP_GITHUB_CLIENT_SECRET
-
 Notes:
-  - "up" recreates ECR, bootstrap, and dev core infra including RDS and EKS,
+  - "up" recreates ECR and dev core infra including RDS and EKS,
     creates Route53 and ACM objects, and updates gitops/environments/dev/values.yaml
     with the new AWS account, RDS host, and frontend cert ARN.
+    Terraform state is stored locally (no S3 backend).
   - "ecr" recreates only the ECR image repositories.
   - "validate" waits for ACM DNS validation after the domain is delegated to
     the Route53 nameservers printed by "up".
@@ -53,8 +47,6 @@ Notes:
     updated GitOps values and Kubernetes secrets are ready.
   - "finish" waits for the frontend ingress, discovers the ALB DNS/zone ID, and
     applies the Route53 alias record.
-  - "secrets" creates Kubernetes secrets for all environments (dev, qa, uat, prod).
-    Safe to re-run; existing secrets are replaced.
 EOF
 }
 
@@ -76,15 +68,7 @@ apply_tf() {
 }
 
 init_dev_backend() {
-  local state_bucket
-  state_bucket="$(terraform -chdir="$BOOTSTRAP_DIR" output -raw state_bucket_name)"
-
-  terraform -chdir="$DEV_DIR" init -reconfigure \
-    -backend-config="bucket=${state_bucket}" \
-    -backend-config="region=${AWS_REGION}" \
-    -backend-config="key=env/dev/terraform.tfstate" \
-    -backend-config="encrypt=true" \
-    -backend-config="use_lockfile=true"
+  terraform -chdir="$DEV_DIR" init -reconfigure
 }
 
 update_dev_values() {
@@ -157,10 +141,6 @@ phase_up() {
   role_arn="arn:aws:iam::${account_id}:role/${LAB_ROLE_NAME}"
 
   phase_ecr
-
-  terraform -chdir="$BOOTSTRAP_DIR" init
-  apply_tf "$BOOTSTRAP_DIR" \
-    -var="aws_region=${AWS_REGION}"
 
   init_dev_backend
   apply_tf "$DEV_DIR" \
@@ -334,63 +314,6 @@ phase_finish() {
   echo "  ZoneID: ${frontend_alb_zone_id}"
 }
 
-phase_secrets() {
-  ensure_env
-  need_cmd aws
-  need_cmd kubectl
-
-  local db_password="${TF_VAR_db_password}"
-  local jwt_secret="${APP_JWT_SECRET:-}"
-  local google_client_id="${APP_GOOGLE_CLIENT_ID:-}"
-  local google_client_secret="${APP_GOOGLE_CLIENT_SECRET:-}"
-  local github_client_id="${APP_GITHUB_CLIENT_ID:-}"
-  local github_client_secret="${APP_GITHUB_CLIENT_SECRET:-}"
-
-  # Read RDS endpoint from Terraform outputs
-  local rds_endpoint rds_host
-  rds_endpoint="$(terraform -chdir="$DEV_DIR" output -raw rds_endpoint 2>/dev/null || true)"
-  rds_host="${rds_endpoint%%:*}"
-
-  if [[ -z "$rds_host" ]]; then
-    echo "Could not read rds_endpoint from Terraform outputs." >&2
-    echo "Make sure the dev environment is up and terraform state is accessible." >&2
-    exit 1
-  fi
-
-  local db_user="fieldfight"
-  local db_name="fieldfight"
-  local database_url="postgres://${db_user}:${db_password}@${rds_host}:5432/${db_name}"
-
-  # Environments and their namespaces
-  local envs=("dev:field-fight-dev" "qa:field-fight-qa" "uat:field-fight-uat" "prod:field-fight-prod")
-
-  for entry in "${envs[@]}"; do
-    local env_name="${entry%%:*}"
-    local namespace="${entry##*:}"
-    local secret_name="field-fight-${env_name}-secrets"
-
-    echo "Creating secret '${secret_name}' in namespace '${namespace}'..."
-
-    kubectl create namespace "${namespace}" --dry-run=client -o yaml | kubectl apply -f -
-
-    kubectl create secret generic "${secret_name}" \
-      --namespace "${namespace}" \
-      --from-literal=DATABASE_URL="${database_url}" \
-      --from-literal=JWT_SECRET="${jwt_secret}" \
-      --from-literal=GOOGLE_CLIENT_ID="${google_client_id}" \
-      --from-literal=GOOGLE_CLIENT_SECRET="${google_client_secret}" \
-      --from-literal=GITHUB_CLIENT_ID="${github_client_id}" \
-      --from-literal=GITHUB_CLIENT_SECRET="${github_client_secret}" \
-      --dry-run=client -o yaml | kubectl apply -f -
-
-    echo "  Done."
-  done
-
-  echo
-  echo "Secrets created for all environments."
-  echo "Verify with: kubectl get secrets -A | grep field-fight"
-}
-
 main() {
   local mode="${1:-}"
 
@@ -409,9 +332,6 @@ main() {
       ;;
     finish)
       phase_finish
-      ;;
-    secrets)
-      phase_secrets
       ;;
     -h|--help|help|"")
       usage

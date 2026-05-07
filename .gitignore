@@ -45,8 +45,6 @@ Thumbs.db
 *.tfplan
 tfplan
 tfplan.*
-**/backend.tf
-!**/backend.tf.example
 override.tf
 override.tf.json
 *_override.tf

@@ -40,7 +40,6 @@ steps.
 
 - [x] Create ECR repositories with Terraform.
 - [x] Build and push immutable Docker images tagged by commit SHA.
-- [x] Create Terraform bootstrap resources: S3 state bucket and lock table.
 - [x] Create VPC, public/private/database subnets, NAT, security groups, and RDS
   Postgres through Terraform.
 - [x] Create EKS and managed node groups through Terraform using the lab
@@ -63,19 +62,17 @@ steps.
 - [x] Expose the frontend through ALB Ingress.
 - [x] Serve the frontend at `https://field-fight-dev.shri.software`.
 - [x] Verify `field-fight-dev` is `Synced` and `Healthy`.
-- [x] Remove observability from active GitOps until Phase 7 so the app baseline
-  remains clean.
 
 ## Phase 4: Git-Driven Promotion Environments
 
-- [x] Add GitOps values/apps for `qa`, `uat`, and `prod`.
-- [x] Keep environment differences in values files, not hand-edited manifests.
-- [x] Add nightly GitHub Actions promotion from `dev` image tag to `qa`.
-- [x] Add UAT promotion triggered by pull request merge or RC-style conventional
+- [ ] Add GitOps values/apps for `qa`, `uat`, and `prod`.
+- [ ] Keep environment differences in values files, not hand-edited manifests.
+- [ ] Add nightly GitHub Actions promotion from `dev` image tag to `qa`.
+- [ ] Add UAT promotion triggered by pull request merge or RC-style conventional
   commit signal.
-- [x] Add prod promotion triggered only by release tag or release label, such as
+- [ ] Add prod promotion triggered only by release tag or release label, such as
   `v1.0.1`.
-- [x] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD does
+- [ ] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD does
   the cluster deployment.
 - [ ] Add Terraform format/validate/plan checks for environment changes.
 - [ ] Document the promotion chain for the final demo.
@@ -111,8 +108,8 @@ steps.
 
 ## Phase 7: Self-Hosted Observability and Logging
 
-- [ ] Reintroduce observability as a separate Argo CD application after the app
-  and promotion path are stable.
+- [ ] Add observability as a separate Argo CD application after the app and
+  promotion path are stable.
 - [ ] Deploy Prometheus and Grafana inside EKS; do not use AWS managed
   observability services.
 - [ ] Start minimal: Prometheus, Grafana, kube-state-metrics, node-exporter, and

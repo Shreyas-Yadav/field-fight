@@ -1,12 +1,9 @@
-# Phase 4: Terraform Bootstrap and Core Infrastructure
+# Phase 4: Core Infrastructure
 
 Phase 4 creates the AWS foundation that the ECR images will later run on.
 
 ## What This Phase Adds
 
-- Terraform bootstrap stack for remote state storage.
-- S3 bucket for Terraform state.
-- DynamoDB table for Terraform state locking.
 - Dev VPC with public, private, and database subnets.
 - RDS Postgres for persistent app data.
 - Optional EKS cluster and managed node group.
@@ -39,27 +36,11 @@ The `dev` environment has been applied in `us-east-1`:
 
 ## Command Order
 
-Bootstrap remote state first:
-
-```sh
-cd terraform/bootstrap
-terraform init
-terraform plan
-terraform apply
-terraform output backend_config
-```
-
-Then initialize the dev stack with the bootstrap output:
+Terraform state is stored locally for this stack — there is no S3 backend.
 
 ```sh
 cd terraform/environments/dev
-cp backend.tf.example backend.tf
-terraform init \
-  -backend-config="bucket=<state-bucket>" \
-  -backend-config="region=us-east-1" \
-  -backend-config="key=env/dev/terraform.tfstate" \
-  -backend-config="encrypt=true" \
-  -backend-config="use_lockfile=true"
+terraform init
 terraform plan
 ```
 
