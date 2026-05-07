@@ -366,9 +366,9 @@ phase_finish() {
 }
 
 read_db_value_from_values() {
-  # Reads a key under the top-level `database:` block in values.yaml.
-  # Usage: read_db_value_from_values <key>
-  python3 - "$VALUES_FILE" "$1" <<'PY'
+  # Reads a key under the top-level `database:` block in a values.yaml file.
+  # Usage: read_db_value_from_values <values-file> <key>
+  python3 - "$1" "$2" <<'PY'
 import re, sys
 path, key = sys.argv[1], sys.argv[2]
 text = open(path).read()
@@ -384,49 +384,39 @@ print(val)
 PY
 }
 
-phase_secrets() {
-  need_cmd kubectl
-  need_cmd python3
+apply_secret_for_env() {
+  # Apply the field-fight-<env>-secrets Secret to the field-fight-<env>
+  # namespace, restart deployments, and re-run the migration job.
+  # The secret values come from sourced SECRETS_ENV_FILE; the database
+  # connection details come from the per-env values.yaml.
+  local env="$1"
+  local namespace="field-fight-${env}"
+  local secret_name="field-fight-${env}-secrets"
+  local app_name="field-fight-${env}"
+  local values_file="$ROOT/gitops/environments/${env}/values.yaml"
 
-  if [[ ! -f "$SECRETS_ENV_FILE" ]]; then
-    echo "secrets env file not found: $SECRETS_ENV_FILE" >&2
-    echo "Copy secrets.env.example to secrets.env and fill in real values." >&2
-    exit 1
+  if [[ ! -f "$values_file" ]]; then
+    echo "[${env}] skipped — values file not found: $values_file"
+    return 0
   fi
 
-  # Source the env file in a subshell-safe way: only reads KEY=VALUE lines.
-  set -a
-  # shellcheck disable=SC1090
-  . "$SECRETS_ENV_FILE"
-  set +a
-
-  local missing=()
-  for var in DB_PASSWORD JWT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET; do
-    if [[ -z "${!var:-}" ]]; then
-      missing+=("$var")
-    fi
-  done
-
-  if (( ${#missing[@]} > 0 )); then
-    echo "missing required keys in $SECRETS_ENV_FILE: ${missing[*]}" >&2
-    exit 1
-  fi
+  echo
+  echo "------------------------------------------------------------"
+  echo "  Applying secret for environment: ${env}"
+  echo "------------------------------------------------------------"
 
   local db_host db_port db_name db_user database_url
-  db_host="$(read_db_value_from_values host)"
-  db_port="$(read_db_value_from_values port)"
-  db_name="$(read_db_value_from_values name)"
-  db_user="$(read_db_value_from_values user)"
+  db_host="$(read_db_value_from_values "$values_file" host)"
+  db_port="$(read_db_value_from_values "$values_file" port)"
+  db_name="$(read_db_value_from_values "$values_file" name)"
+  db_user="$(read_db_value_from_values "$values_file" user)"
 
   if [[ -z "$db_host" || -z "$db_port" || -z "$db_name" || -z "$db_user" ]]; then
-    echo "could not read all database.* fields from $VALUES_FILE" >&2
-    exit 1
+    echo "[${env}] could not read all database.* fields from $values_file" >&2
+    return 1
   fi
 
   database_url="postgres://${db_user}:${DB_PASSWORD}@${db_host}:${db_port}/${db_name}"
-
-  local namespace="$INGRESS_NAMESPACE"
-  local secret_name="field-fight-dev-secrets"
 
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -441,52 +431,41 @@ phase_secrets() {
     --from-literal=GITHUB_CLIENT_SECRET="$GITHUB_CLIENT_SECRET" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  echo
-  echo "Secret '${secret_name}' applied in namespace '${namespace}' (host=${db_host})."
+  echo "[${env}] secret applied (host=${db_host})"
 
-  # Restart all app deployments so pods re-read the refreshed secret.
-  # Existing pods do NOT pick up new secret keys without a restart.
-  if kubectl -n "$namespace" get deployments >/dev/null 2>&1; then
-    local deployments
-    deployments="$(kubectl -n "$namespace" get deployments -o name 2>/dev/null || true)"
-    if [[ -n "$deployments" ]]; then
-      echo "Restarting deployments to pick up new secret values..."
-      kubectl -n "$namespace" rollout restart deployment
-    fi
+  # Restart deployments so pods re-read the refreshed secret.
+  if kubectl -n "$namespace" get deployments -o name 2>/dev/null | grep -q .; then
+    echo "[${env}] restarting deployments..."
+    kubectl -n "$namespace" rollout restart deployment >/dev/null
   fi
 
-  # Delete any existing migration jobs and their pods so a fresh one runs
-  # against the refreshed secret. Jobs are matched by name prefix because
-  # the parent Job resource does not carry the component=migrations label
-  # (only the pod template does).
+  # Delete any existing migration jobs and pods so a fresh one runs.
   local old_jobs
   old_jobs="$(kubectl -n "$namespace" get jobs -o name 2>/dev/null \
     | grep -E "/field-fight-.*-migrations(-[a-z0-9]+)?$" || true)"
   if [[ -n "$old_jobs" ]]; then
-    echo "Deleting old migration jobs:"
-    echo "$old_jobs"
     # shellcheck disable=SC2086
-    kubectl -n "$namespace" delete $old_jobs --ignore-not-found
+    kubectl -n "$namespace" delete $old_jobs --ignore-not-found >/dev/null
   fi
-
-  # Also delete any leftover migration pods (orphaned from prior failed jobs).
   kubectl -n "$namespace" delete pods \
     -l app.kubernetes.io/component=migrations \
-    --ignore-not-found
+    --ignore-not-found >/dev/null 2>&1 || true
 
-  # Force ArgoCD to recreate the Job immediately rather than waiting for the
-  # next reconcile loop.
-  if kubectl get application field-fight-dev -n argocd >/dev/null 2>&1; then
-    echo "Triggering ArgoCD refresh of field-fight-dev..."
-    kubectl -n argocd patch application field-fight-dev \
+  # Force ArgoCD to recreate the Job immediately.
+  if kubectl get application "$app_name" -n argocd >/dev/null 2>&1; then
+    kubectl -n argocd patch application "$app_name" \
       --type merge \
       -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' >/dev/null
   fi
+}
 
-  echo
-  echo "Waiting up to 5 minutes for a fresh migration pod to complete..."
+wait_for_migration() {
+  # Wait up to 5 minutes for the latest migrations pod in <namespace>
+  # to reach Succeeded. Returns 0 on success, 1 on failure/timeout.
+  local namespace="$1"
   local deadline=$((SECONDS + 300))
   local mig_pod="" phase=""
+
   while (( SECONDS < deadline )); do
     mig_pod="$(kubectl -n "$namespace" get pods -l app.kubernetes.io/component=migrations \
       --sort-by=.metadata.creationTimestamp \
@@ -495,37 +474,100 @@ phase_secrets() {
       phase="$(kubectl -n "$namespace" get pod "$mig_pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
       case "$phase" in
         Succeeded)
-          echo "Migration pod '$mig_pod' succeeded."
-          echo "Waiting for app deployments to finish rolling out..."
-          kubectl -n "$namespace" rollout status deployment --timeout=300s || true
-          echo
-          echo "============================================================"
-          echo "  PHASE 'secrets' COMPLETE — what to do next:"
-          echo "============================================================"
-          echo "  1. (First deploy only) Apply the Argo CD root app:"
-          echo "       kubectl apply -f gitops/root.yaml"
-          echo
-          echo "  2. Wait for the frontend ingress, then:"
-          echo "       $0 finish"
-          echo "============================================================"
+          echo "[${namespace}] migration pod '$mig_pod' succeeded"
           return 0
           ;;
         Failed)
-          echo "Migration pod '$mig_pod' failed. Recent logs:" >&2
-          kubectl -n "$namespace" logs "$mig_pod" 2>&1 | tail -30 >&2 || true
-          exit 1
-          ;;
-        Running|Pending)
-          # keep waiting
+          echo "[${namespace}] migration pod '$mig_pod' failed. Last logs:" >&2
+          kubectl -n "$namespace" logs "$mig_pod" 2>&1 | tail -20 >&2 || true
+          return 1
           ;;
       esac
     fi
     sleep 5
   done
 
-  echo "Migration job did not complete within timeout. Inspect with:" >&2
-  echo "  kubectl get pods -n $namespace -l app.kubernetes.io/component=migrations" >&2
-  exit 1
+  echo "[${namespace}] migration did not complete within timeout" >&2
+  return 1
+}
+
+phase_secrets() {
+  need_cmd kubectl
+  need_cmd python3
+
+  if [[ ! -f "$SECRETS_ENV_FILE" ]]; then
+    echo "secrets env file not found: $SECRETS_ENV_FILE" >&2
+    echo "Copy secrets.env.example to secrets.env and fill in real values." >&2
+    exit 1
+  fi
+
+  # Source the env file. Only reads KEY=VALUE lines.
+  set -a
+  # shellcheck disable=SC1090
+  . "$SECRETS_ENV_FILE"
+  set +a
+
+  local missing=()
+  for var in DB_PASSWORD JWT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET; do
+    if [[ -z "${!var:-}" ]]; then
+      missing+=("$var")
+    fi
+  done
+  if (( ${#missing[@]} > 0 )); then
+    echo "missing required keys in $SECRETS_ENV_FILE: ${missing[*]}" >&2
+    exit 1
+  fi
+
+  # Apply secret to every environment that has a values.yaml file.
+  local envs=(dev qa uat prod)
+  for env in "${envs[@]}"; do
+    apply_secret_for_env "$env"
+  done
+
+  echo
+  echo "------------------------------------------------------------"
+  echo "  Waiting for migration jobs to complete in each namespace"
+  echo "------------------------------------------------------------"
+
+  local failed=()
+  for env in "${envs[@]}"; do
+    local namespace="field-fight-${env}"
+    if ! kubectl get namespace "$namespace" >/dev/null 2>&1; then
+      continue
+    fi
+    if ! wait_for_migration "$namespace"; then
+      failed+=("$env")
+    fi
+  done
+
+  echo
+  echo "------------------------------------------------------------"
+  echo "  Waiting for app deployments to finish rolling out"
+  echo "------------------------------------------------------------"
+  for env in "${envs[@]}"; do
+    local namespace="field-fight-${env}"
+    if kubectl get namespace "$namespace" >/dev/null 2>&1; then
+      kubectl -n "$namespace" rollout status deployment --timeout=300s 2>&1 \
+        | sed "s/^/[${env}] /" || true
+    fi
+  done
+
+  if (( ${#failed[@]} > 0 )); then
+    echo
+    echo "Migration failed in: ${failed[*]}" >&2
+    exit 1
+  fi
+
+  echo
+  echo "============================================================"
+  echo "  PHASE 'secrets' COMPLETE — what to do next:"
+  echo "============================================================"
+  echo "  1. (First deploy only) Apply the Argo CD root app:"
+  echo "       kubectl apply -f gitops/root.yaml"
+  echo
+  echo "  2. Wait for the frontend ingress, then:"
+  echo "       $0 finish"
+  echo "============================================================"
 }
 
 main() {
