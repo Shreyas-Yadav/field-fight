@@ -1,19 +1,17 @@
 # Start Services
 
-Use this guide to bring the dev environment online — either from scratch (first
-time) or after a `stop` (resume work next day).
+Two scenarios:
+
+- **Scenario A** — first time on a fresh AWS account (full bootstrap)
+- **Scenario B** — resume after `stop` (recommended daily flow)
 
 ## Where Terraform state lives
 
 Local file: `terraform/environments/dev/terraform.tfstate`
 
-This file is **gitignored** but persists on your laptop between sessions. It
-tracks which AWS resources Terraform owns. Do not delete it unless you have
-already destroyed all resources, otherwise Terraform will lose track of what
-exists in AWS.
-
-If you ever lose the state file, run `terraform import` for each resource or do
-a full destroy from the AWS Console and start over.
+Gitignored, persists on your laptop. Tracks which AWS resources Terraform
+owns. **Do not delete it** — Terraform will lose track of resources and
+report "already exists" errors.
 
 ## Prerequisites
 
@@ -40,28 +38,35 @@ Verify access:
 aws sts get-caller-identity
 ```
 
+(One-time) copy the secrets template and fill in real values:
+
+```bash
+cp secrets.env.example secrets.env
+$EDITOR secrets.env
+```
+
+---
+
 ## Scenario A — First time (fresh AWS account)
 
-Use this when the AWS account is empty and nothing has been deployed yet.
-
-### 1. Create everything
+### 1. Bootstrap infrastructure
 
 ```bash
 bash scripts/recreate-dev.sh up
 ```
 
-Takes ~20 minutes. At the end it prints Route53 nameservers.
+Takes ~20 minutes. Outputs Route53 nameservers and the dev cert ARN.
 
 ### 2. Delegate DNS
 
-In your domain registrar, replace nameservers with the 4 from the output.
-Wait 5-15 minutes for propagation:
+In your domain registrar, replace nameservers with the 4 from the output. Wait
+5-15 minutes for propagation:
 
 ```bash
 dig +short NS shri.software
 ```
 
-### 3. Commit the auto-updated values
+### 3. Commit the auto-updated dev values.yaml
 
 ```bash
 git add gitops/environments/dev/values.yaml
@@ -69,130 +74,111 @@ git commit -m "chore: update dev values for new AWS account"
 git push
 ```
 
-### 4. Validate ACM certificate
+### 4. Validate ACM certificates (also creates qa/uat/prod certs)
 
 ```bash
 bash scripts/recreate-dev.sh validate
 ```
 
-### 5. Install ArgoCD and Load Balancer Controller
+Auto-patches `gitops/environments/{qa,uat,prod}/values.yaml` with their cert
+ARNs and `ingress.enabled: true`.
+
+### 5. Commit the multi-env updates
+
+```bash
+git diff gitops/environments
+git add gitops/environments
+git commit -m "feat: enable HTTPS for qa/uat/prod"
+git push
+```
+
+### 6. Install Argo CD + AWS Load Balancer Controller
 
 ```bash
 bash scripts/recreate-dev.sh gitops
 ```
 
-### 6. Configure kubectl and create Kubernetes secrets
+### 7. Apply the Argo CD root app (first time only)
 
 ```bash
 aws eks update-kubeconfig --region us-east-1 --name field-fight-dev-eks
-
-kubectl create namespace field-fight-dev --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl create secret generic field-fight-dev-secrets \
-  --namespace=field-fight-dev \
-  --from-literal=DB_PASSWORD='rootroot' \
-  --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
-  --from-literal=GOOGLE_CLIENT_ID='your-google-client-id' \
-  --from-literal=GOOGLE_CLIENT_SECRET='your-google-client-secret' \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-### 7. Apply the ArgoCD root application
-
-```bash
 kubectl apply -f gitops/root.yaml
 ```
 
-### 8. Wire Route53 to the ALB
+### 8. Apply secrets to all 4 namespaces and run migrations
+
+```bash
+bash scripts/recreate-dev.sh secrets
+```
+
+### 9. Wire Route53 aliases to the ALB
 
 ```bash
 bash scripts/recreate-dev.sh finish
 ```
 
-### 9. Verify
+### 10. Verify
 
 ```bash
 bash scripts/dev-status.sh
-curl -I https://field-fight-dev.shri.software
+for h in field-fight-dev field-fight-qa field-fight-uat field-fight; do
+  curl -I -s "https://$h.shri.software" | head -1
+done
 ```
 
 ---
 
 ## Scenario B — Resume after `stop` (RECOMMENDED daily flow)
 
-Use this when you previously ran `stop-services.md` to tear down EKS and NAT
-but kept Route53, ACM, RDS, VPC, and ECR.
+You previously ran `scripts/recreate-dev.sh stop`. RDS, Route53, ACM, ECR, and
+the VPC are all still alive. Only EKS and NAT need rebuilding.
 
-### 1. Re-export credentials
-
-```bash
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_SESSION_TOKEN=...
-export TF_VAR_db_password='rootroot'
-```
-
-### 2. Re-create EKS and NAT
+### One command
 
 ```bash
-ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-
-terraform -chdir=terraform/environments/dev apply \
-  -var="aws_region=us-east-1" \
-  -var="create_eks=true" \
-  -var="install_argocd=true" \
-  -var="install_aws_load_balancer_controller=true" \
-  -var="enable_nat_gateway=true" \
-  -var="single_nat_gateway=true" \
-  -var="create_route53_zone=true" \
-  -var="create_frontend_certificate=true" \
-  -var="validate_frontend_certificate=true" \
-  -var="eks_cluster_role_arn=arn:aws:iam::${ACCOUNT}:role/LabRole" \
-  -var="eks_node_role_arn=arn:aws:iam::${ACCOUNT}:role/LabRole" \
-  -auto-approve
+bash scripts/recreate-dev.sh start
 ```
 
-Takes ~15 minutes. EKS comes back, ArgoCD reinstalls, LBC reinstalls.
+This runs `gitops` → `kubectl apply -f gitops/root.yaml` → `secrets` → `finish`
+in sequence. Takes ~15 minutes.
 
-### 3. Refresh kubeconfig
+### Verify
+
+```bash
+bash scripts/dev-status.sh
+for h in field-fight-dev field-fight-qa field-fight-uat field-fight; do
+  curl -I -s "https://$h.shri.software" | head -1
+done
+```
+
+That's it — DNS, ACM, ECR images, RDS data all survived.
+
+---
+
+## Troubleshooting
+
+### "no configuration has been provided" / K8s connection error
+
+You ran a phase before `aws eks update-kubeconfig` resolved. Run:
 
 ```bash
 aws eks update-kubeconfig --region us-east-1 --name field-fight-dev-eks
 ```
 
-### 4. Re-create Kubernetes secrets
+Then re-run the phase.
 
-Secrets do not survive cluster destroy — recreate them:
+### Pods stuck in `CreateContainerConfigError`
 
-```bash
-kubectl create namespace field-fight-dev --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl create secret generic field-fight-dev-secrets \
-  --namespace=field-fight-dev \
-  --from-literal=DB_PASSWORD='rootroot' \
-  --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
-  --from-literal=GOOGLE_CLIENT_ID='your-google-client-id' \
-  --from-literal=GOOGLE_CLIENT_SECRET='your-google-client-secret' \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-### 5. Re-apply the ArgoCD root app
+The Kubernetes Secret is missing or has stale keys. Re-run:
 
 ```bash
-kubectl apply -f gitops/root.yaml
+bash scripts/recreate-dev.sh secrets
 ```
 
-ArgoCD will sync the dev app and pull images from ECR.
+This recreates the secret AND restarts deployments so pods re-read it.
 
-### 6. Wait for ALB and re-wire Route53
+### Pods stuck in `ImagePullBackOff`
 
-```bash
-bash scripts/recreate-dev.sh finish
-```
-
-### 7. Verify
-
-```bash
-bash scripts/dev-status.sh
-curl -I https://field-fight-dev.shri.software
-```
+The `imageTag` in `values.yaml` references an image that's not in ECR. Either:
+- Push code to main (CI builds + updates dev values.yaml)
+- Manually trigger the relevant promote workflow on GitHub

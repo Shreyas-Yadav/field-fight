@@ -65,18 +65,20 @@ steps.
 
 ## Phase 4: Git-Driven Promotion Environments
 
-- [ ] Add GitOps values for `qa`, `uat`, and `prod` under
+- [x] Add GitOps values for `qa`, `uat`, and `prod` under
   `gitops/environments/`.
-- [ ] Add Argo CD `Application` manifests for `qa`, `uat`, and `prod` under
+- [x] Add Argo CD `Application` manifests for `qa`, `uat`, and `prod` under
   `gitops/apps/`.
-- [ ] Keep environment differences in values files, not hand-edited manifests.
-- [ ] Add nightly GitHub Actions promotion from the `dev` image tag to `qa`.
-- [ ] Add UAT promotion triggered by pull request merge or RC-style
+- [x] Keep environment differences in values files, not hand-edited manifests.
+- [x] Add nightly GitHub Actions promotion from the `dev` image tag to `qa`.
+- [x] Add UAT promotion triggered by pull request merge or RC-style
   conventional commit signal.
-- [ ] Add prod promotion triggered only by release tag or release label, such
+- [x] Add prod promotion triggered only by release tag or release label, such
   as `v1.0.1`.
-- [ ] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD
+- [x] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD
   does the cluster deployment.
+- [x] HTTPS for all 4 environments via shared ALB ingress group (one ALB
+  serves dev/qa/uat/prod with separate ACM certs).
 - [ ] Document a rollback path: revert the values commit on the target
   environment branch.
 - [ ] Add Terraform format/validate/plan checks for environment changes.

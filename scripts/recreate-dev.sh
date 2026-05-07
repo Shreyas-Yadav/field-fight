@@ -27,6 +27,8 @@ Usage:
   scripts/recreate-dev.sh gitops
   scripts/recreate-dev.sh secrets
   scripts/recreate-dev.sh finish
+  scripts/recreate-dev.sh stop
+  scripts/recreate-dev.sh start
 
 Environment:
   TF_VAR_db_password    required
@@ -53,6 +55,11 @@ Notes:
     for the required keys.
   - "finish" waits for the frontend ingress, discovers the ALB DNS/zone ID, and
     applies the Route53 alias record.
+  - "stop" tears down only the expensive resources (EKS + NAT Gateway). RDS,
+    Route53, ACM certs, ECR, and the VPC stay alive so resuming next day
+    skips DNS delegation and image rebuilds.
+  - "start" resumes work after a stop: rebuilds EKS, reinstalls Argo CD,
+    applies secrets, syncs the app, and rewires Route53 aliases.
 EOF
 }
 
@@ -458,6 +465,99 @@ phase_finish() {
   echo "============================================================"
 }
 
+phase_stop() {
+  # Tear down only the expensive resources (EKS + NAT) while keeping
+  # RDS, Route53, ACM, ECR, and the VPC. Terraform's K8s/Helm resources
+  # in state must be removed first, otherwise terraform tries to destroy
+  # them via the K8s API after the cluster is already gone and fails.
+  ensure_env
+  need_cmd aws
+  need_cmd terraform
+
+  local account_id role_arn
+  account_id="$(aws sts get-caller-identity --query Account --output text)"
+  role_arn="arn:aws:iam::${account_id}:role/${LAB_ROLE_NAME}"
+
+  init_dev_backend
+
+  echo "Removing K8s/Helm-managed resources from Terraform state..."
+  for addr in \
+    "kubernetes_namespace.argocd[0]" \
+    "helm_release.argocd[0]" \
+    "kubernetes_secret.argocd_repo_credentials[0]" \
+    "helm_release.aws_load_balancer_controller[0]"; do
+    terraform -chdir="$DEV_DIR" state rm "$addr" 2>/dev/null || true
+  done
+
+  echo "Destroying EKS + NAT Gateway, keeping RDS/Route53/ACM..."
+  apply_tf "$DEV_DIR" \
+    -var="aws_region=${AWS_REGION}" \
+    -var="create_eks=false" \
+    -var="install_argocd=false" \
+    -var="install_aws_load_balancer_controller=false" \
+    -var="enable_nat_gateway=false" \
+    -var="single_nat_gateway=false" \
+    -var="create_route53_zone=true" \
+    -var="create_frontend_certificate=true" \
+    -var="create_grafana_certificate=false" \
+    -var="validate_frontend_certificate=true" \
+    -var="validate_grafana_certificate=false" \
+    -var="validate_additional_certificates=true" \
+    -var="eks_cluster_role_arn=${role_arn}" \
+    -var="eks_node_role_arn=${role_arn}"
+
+  echo
+  echo "============================================================"
+  echo "  PHASE 'stop' COMPLETE — what stays alive:"
+  echo "============================================================"
+  echo "  - RDS Postgres (data preserved)"
+  echo "  - Route53 hosted zone (no DNS re-delegation needed)"
+  echo "  - ACM certificates (already validated)"
+  echo "  - ECR repositories (no re-push needed)"
+  echo "  - VPC + subnets"
+  echo
+  echo "  Daily cost while stopped: ~\$0.45 (vs ~\$6.50 if all up)"
+  echo
+  echo "  To resume work tomorrow:"
+  echo "       $0 start"
+  echo "============================================================"
+}
+
+phase_start() {
+  # Bring the dev environment back up after a `stop`. This recreates EKS
+  # and NAT, reinstalls ArgoCD/LBC, applies secrets, syncs the app, and
+  # rewires the Route53 alias. RDS/Route53/ACM/ECR stayed alive while
+  # stopped, so DNS delegation and image push are not needed.
+  ensure_env
+
+  echo "Resuming dev environment..."
+  echo "Step 1/5: gitops (recreates EKS, installs ArgoCD + AWS Load Balancer Controller)"
+  phase_gitops
+
+  echo
+  echo "Step 2/5: Apply Argo CD root app to bootstrap GitOps sync"
+  if [[ -f "$ROOT/gitops/root.yaml" ]]; then
+    kubectl apply -f "$ROOT/gitops/root.yaml" || true
+  fi
+
+  echo
+  echo "Step 3/5: secrets (creates K8s secrets in all 4 namespaces)"
+  phase_secrets
+
+  echo
+  echo "Step 4/5: finish (waits for ALB, wires Route53 aliases)"
+  phase_finish
+
+  echo
+  echo "============================================================"
+  echo "  PHASE 'start' COMPLETE — environment is live again."
+  echo "============================================================"
+  echo "  Verify with:"
+  echo "       bash scripts/dev-status.sh"
+  echo "       curl -I https://field-fight-dev.shri.software"
+  echo "============================================================"
+}
+
 read_db_value_from_values() {
   # Reads a key under the top-level `database:` block in a values.yaml file.
   # Usage: read_db_value_from_values <values-file> <key>
@@ -684,6 +784,12 @@ main() {
       ;;
     finish)
       phase_finish
+      ;;
+    stop)
+      phase_stop
+      ;;
+    start)
+      phase_start
       ;;
     -h|--help|help|"")
       usage
