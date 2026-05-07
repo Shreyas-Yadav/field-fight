@@ -1,4 +1,4 @@
-# Magnet Vis AWS/EKS Requirement Roadmap
+# Field Fight AWS/EKS Requirement Roadmap
 
 Use this checklist as the working order for satisfying `output.pdf`. Keep the
 baseline app stable first, then add the remaining graded capabilities in small
@@ -65,66 +65,96 @@ steps.
 
 ## Phase 4: Git-Driven Promotion Environments
 
-- [ ] Add GitOps values/apps for `qa`, `uat`, and `prod`.
+- [ ] Add GitOps values for `qa`, `uat`, and `prod` under
+  `gitops/environments/`.
+- [ ] Add Argo CD `Application` manifests for `qa`, `uat`, and `prod` under
+  `gitops/apps/`.
 - [ ] Keep environment differences in values files, not hand-edited manifests.
-- [ ] Add nightly GitHub Actions promotion from `dev` image tag to `qa`.
-- [ ] Add UAT promotion triggered by pull request merge or RC-style conventional
-  commit signal.
-- [ ] Add prod promotion triggered only by release tag or release label, such as
-  `v1.0.1`.
-- [ ] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD does
-  the cluster deployment.
+- [ ] Add nightly GitHub Actions promotion from the `dev` image tag to `qa`.
+- [ ] Add UAT promotion triggered by pull request merge or RC-style
+  conventional commit signal.
+- [ ] Add prod promotion triggered only by release tag or release label, such
+  as `v1.0.1`.
+- [ ] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD
+  does the cluster deployment.
+- [ ] Document a rollback path: revert the values commit on the target
+  environment branch.
 - [ ] Add Terraform format/validate/plan checks for environment changes.
 - [ ] Document the promotion chain for the final demo.
 
-## Phase 5: Zero-Downtime Release Strategy
+## Phase 5: Self-Hosted Observability and Logging
 
-- [ ] Use **blue/green** for the EKS release strategy.
-- [ ] Justify blue/green: simple demo, fast rollback, clear before/after
-  traffic switch, and less operational complexity than canary.
-- [ ] Add blue and green variants for production workloads.
-- [ ] Route traffic only to the active color through Git-managed Kubernetes
-  desired state.
-- [ ] Keep the inactive color running until the new color passes readiness
-  checks.
-- [ ] Configure graceful shutdown and ALB deregistration delay.
-- [ ] Add PodDisruptionBudgets for services that should stay available.
-- [ ] Demonstrate rollback by reverting Git desired state.
-- [ ] Verify promotion causes zero dropped requests during the demo.
+Built before Day 2 because Day 2 demos require Grafana dashboards and Loki
+queries to *prove* zero dropped requests and successful schema migration.
 
-## Phase 6: Mandatory Day 2 Scenarios
+### Phase 5a: Metrics
 
-- [ ] OS/security patching: update EKS managed node group version or launch
-  template through Terraform.
-- [ ] Show Kubernetes drains or replaces worker nodes while workloads reschedule.
-- [ ] Verify app remains reachable during node replacement.
-- [ ] Schema change: add a small backward-compatible RDS migration.
-- [ ] Use `duration_seconds` on match history as the recommended schema-change
-  field.
-- [ ] Deploy schema migration through an Argo CD migration Job.
-- [ ] Deploy backend code that can read both old and new rows.
-- [ ] Verify old rows still load and new writes include the new field.
-- [ ] Document the stability reasoning for both Day 2 demos.
+- [ ] Add observability as a separate Argo CD application.
+- [ ] Deploy Prometheus and Grafana inside EKS via `kube-prometheus-stack`.
+- [ ] Add `kube-state-metrics`, `node-exporter`, and ServiceMonitors for
+  every backend service.
+- [ ] Add dashboards for node CPU, node memory, disk space, pod restarts,
+  request rate, latency, and 5xx responses.
 
-## Phase 7: Self-Hosted Observability and Logging
+### Phase 5b: Logs
 
-- [ ] Add observability as a separate Argo CD application after the app and
-  promotion path are stable.
-- [ ] Deploy Prometheus and Grafana inside EKS; do not use AWS managed
-  observability services.
-- [ ] Start minimal: Prometheus, Grafana, kube-state-metrics, node-exporter, and
-  ServiceMonitors.
-- [ ] Add dashboards for node CPU, node memory, disk space, pods, request rate,
-  latency, and 5xx responses.
-- [ ] Expose Grafana externally through HTTPS.
-- [ ] Protect Grafana with GitHub OAuth2; username/password login is prohibited.
-- [ ] Add Alertmanager Slack notifications for critical CPU, memory, disk, pod,
-  and app-health thresholds.
 - [ ] Add Loki and Promtail for centralized logs across all backend
   microservices.
-- [ ] Use ephemeral Loki storage in the AWS lab for reliability; document that
-  production should use S3 or EBS-backed durable storage.
-- [ ] Verify dashboards, alerts, and centralized log queries before final demo.
+- [ ] Use ephemeral Loki storage in the AWS lab; document that production
+  should use S3 or EBS-backed durable storage.
+- [ ] Verify centralized log queries from Grafana Explore.
+
+### Phase 5c: External Access and Alerts
+
+- [ ] Create ACM cert for `grafana-dev.shri.software` through Terraform.
+- [ ] Expose Grafana through ALB Ingress with HTTPS.
+- [ ] Protect Grafana with GitHub OAuth2; disable username/password login.
+- [ ] Add Alertmanager Slack notifications for critical CPU, memory, disk,
+  pod, and app-health thresholds.
+
+## Phase 6: Blue/Green Zero-Downtime Releases (Prod-only)
+
+Scope this to the `prod` environment only. Dev/QA/UAT use rolling updates to
+keep iteration fast and avoid duplicating workloads in cheaper environments.
+
+- [ ] Pick **blue/green** as the EKS release strategy for prod.
+- [ ] Justify blue/green: simple demo, fast rollback, clear before/after
+  traffic switch, less operational complexity than canary.
+- [ ] Add blue and green Deployment variants in the helm chart, gated by a
+  values toggle so only prod uses them.
+- [ ] Route traffic only to the active color through a Service `selector`
+  managed in Git.
+- [ ] Keep the inactive color running until the new color passes readiness
+  checks.
+- [ ] Configure graceful shutdown (`preStop` + `terminationGracePeriodSeconds`)
+  and ALB deregistration delay.
+- [ ] Add PodDisruptionBudgets for services that should stay available.
+- [ ] Demonstrate rollback by reverting the Git commit that flipped colors.
+- [ ] Verify promotion causes zero dropped requests using Phase 5 dashboards.
+
+## Phase 7: Mandatory Day 2 Scenarios
+
+### Day 2a: OS/Security Patching
+
+- [ ] Bump EKS managed node group AMI version through Terraform.
+- [ ] Run `terraform apply`; show Kubernetes drains and replaces worker nodes
+  while workloads reschedule.
+- [ ] Verify app remains reachable using the frontend dashboard and the 5xx
+  panel from Phase 5.
+- [ ] Verify in Loki that no error logs appeared during node replacement.
+
+### Day 2b: RDS Schema Change (zero-downtime sequence)
+
+The order matters. A backwards-compatible schema change requires the read path
+to handle the new column being null *before* writes start using it.
+
+- [ ] **Step 1.** Deploy backend code that can *read* both old and new rows
+  (treats the new field as optional with a default).
+- [ ] **Step 2.** Deploy schema migration through an Argo CD migration `Job`
+  that adds `duration_seconds` to `match_history` with a default value.
+- [ ] **Step 3.** Deploy backend code that *writes* the new field on inserts.
+- [ ] Verify old rows still load and new writes include the new field.
+- [ ] Document the stability reasoning for both Day 2 demos.
 
 ## Phase 8: Final Demo Preparation
 
@@ -135,11 +165,12 @@ steps.
 - [ ] Show GitHub Actions building images and updating GitOps desired state.
 - [ ] Show Argo CD syncing the app from Git.
 - [ ] Show custom HTTPS frontend access.
-- [ ] Show blue/green or rollback behavior with zero dropped requests.
-- [ ] Show OS/security patching through Terraform.
-- [ ] Show RDS schema migration through Argo CD.
-- [ ] Show Grafana OAuth login, dashboards, Slack alert path, and centralized log
-  queries.
+- [ ] Show blue/green cutover and rollback in prod with zero dropped requests.
+- [ ] Show OS/security patching through Terraform with live dashboard proof.
+- [ ] Show RDS schema migration sequence (read-compatible code → migration →
+  writer code) through Argo CD.
+- [ ] Show Grafana OAuth login, dashboards, Slack alert path, and centralized
+  log queries.
 
 ## Defaults and Constraints
 
@@ -149,7 +180,7 @@ steps.
 - Kubernetes source of truth: GitOps through Argo CD.
 - Image tags: immutable commit SHAs.
 - Dev node size: `t3.medium`.
-- Deployment strategy: blue/green.
+- Deployment strategy: blue/green in prod, rolling in lower environments.
 - Alert channel: Slack.
 - Dev Loki storage: ephemeral, because AWS Lab EBS CSI permissions are
   unreliable.
