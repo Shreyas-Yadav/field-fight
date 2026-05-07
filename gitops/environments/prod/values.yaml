@@ -1,0 +1,41 @@
+imageTag: ""
+
+registry:
+  accountId: "272772901676"
+  region: us-east-1
+  repositoryPrefix: field-fight
+
+database:
+  host: field-fight-dev-postgres.cjzrv40mvlrb.us-east-1.rds.amazonaws.com
+  port: 5432
+  name: fieldfight
+  user: fieldfight
+  password: ""
+  ssl: true
+
+urls:
+  frontend: https://field-fight.shri.software
+  service: https://field-fight.shri.software
+
+config:
+  nodeEnv: production
+  port: "3000"
+  corsOrigin: "*"
+
+auth:
+  jwtSecret: ""
+  googleClientId: ""
+  googleClientSecret: ""
+  githubClientId: ""
+  githubClientSecret: ""
+
+secrets:
+  create: false
+  existingSecret: field-fight-prod-secrets
+
+ingress:
+  enabled: true
+  className: alb
+  host: field-fight.shri.software
+  certificateArn: ""
+  annotations: {}

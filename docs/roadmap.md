@@ -68,14 +68,14 @@ steps.
 
 ## Phase 4: Git-Driven Promotion Environments
 
-- [ ] Add GitOps values/apps for `qa`, `uat`, and `prod`.
-- [ ] Keep environment differences in values files, not hand-edited manifests.
-- [ ] Add nightly GitHub Actions promotion from `dev` image tag to `qa`.
-- [ ] Add UAT promotion triggered by pull request merge or RC-style conventional
+- [x] Add GitOps values/apps for `qa`, `uat`, and `prod`.
+- [x] Keep environment differences in values files, not hand-edited manifests.
+- [x] Add nightly GitHub Actions promotion from `dev` image tag to `qa`.
+- [x] Add UAT promotion triggered by pull request merge or RC-style conventional
   commit signal.
-- [ ] Add prod promotion triggered only by release tag or release label, such as
+- [x] Add prod promotion triggered only by release tag or release label, such as
   `v1.0.1`.
-- [ ] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD does
+- [x] Ensure GitHub Actions only updates Git-tracked desired state; Argo CD does
   the cluster deployment.
 - [ ] Add Terraform format/validate/plan checks for environment changes.
 - [ ] Document the promotion chain for the final demo.

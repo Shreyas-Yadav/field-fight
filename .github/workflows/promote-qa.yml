@@ -1,0 +1,44 @@
+name: Nightly Promote Dev to QA
+
+on:
+  schedule:
+    # Runs every night at 02:00 UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  promote-qa:
+    name: Promote Dev Image Tag to QA
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read dev image tag
+        id: dev
+        run: |
+          tag="$(awk -F': ' '/^imageTag:/ { print $2; exit }' gitops/environments/dev/values.yaml)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Read current QA image tag
+        id: qa
+        run: |
+          tag="$(awk -F': ' '/^imageTag:/ { print $2; exit }' gitops/environments/qa/values.yaml)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Promote to QA
+        if: steps.dev.outputs.tag != steps.qa.outputs.tag && steps.dev.outputs.tag != ''
+        env:
+          DEV_TAG: ${{ steps.dev.outputs.tag }}
+        run: |
+          sed -i "s/^imageTag: .*/imageTag: ${DEV_TAG}/" gitops/environments/qa/values.yaml
+          short_sha="${DEV_TAG::7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gitops/environments/qa/values.yaml
+          git commit -m "chore(gitops): promote qa to ${short_sha} [skip ci]"
+          git push

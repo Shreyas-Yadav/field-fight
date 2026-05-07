@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: field-fight-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Shreyas-Yadav/field-fight.git
+    targetRevision: main
+    path: k8s/helm/field-fight
+    helm:
+      releaseName: field-fight-prod
+      valueFiles:
+        - ../../../gitops/environments/prod/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: field-fight-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

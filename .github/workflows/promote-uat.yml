@@ -1,0 +1,96 @@
+name: Promote QA to UAT
+
+# Triggers:
+#   1. Pull request merged into main (any PR merge is a UAT promotion candidate)
+#   2. Conventional commit with RC signal: commit message starts with "rc:" or contains "(rc)"
+#   3. Manual dispatch
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-signal:
+    name: Check Promotion Signal
+    runs-on: ubuntu-latest
+    outputs:
+      should-promote: ${{ steps.check.outputs.should-promote }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine if UAT promotion should run
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          promote=false
+
+          # PR merged into main
+          if [[ "$EVENT_NAME" == "pull_request" && "$PR_MERGED" == "true" ]]; then
+            promote=true
+            echo "Signal: PR merged into main"
+          fi
+
+          # Push with RC conventional commit signal: "rc: ...", "RC1", "RC2", etc.
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            if echo "$COMMIT_MSG" | grep -qiE '^rc[0-9]*[: ]|^feat(\(.+\))?!:|^fix(\(.+\))?!:|\(rc\)'; then
+              promote=true
+              echo "Signal: RC conventional commit detected"
+            fi
+          fi
+
+          # Manual dispatch always promotes
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            promote=true
+            echo "Signal: manual dispatch"
+          fi
+
+          echo "should-promote=${promote}" >> "$GITHUB_OUTPUT"
+
+  promote-uat:
+    name: Promote QA Image Tag to UAT
+    runs-on: ubuntu-latest
+    needs: check-signal
+    if: needs.check-signal.outputs.should-promote == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read QA image tag
+        id: qa
+        run: |
+          tag="$(awk -F': ' '/^imageTag:/ { print $2; exit }' gitops/environments/qa/values.yaml)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Read current UAT image tag
+        id: uat
+        run: |
+          tag="$(awk -F': ' '/^imageTag:/ { print $2; exit }' gitops/environments/uat/values.yaml)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Promote to UAT
+        if: steps.qa.outputs.tag != steps.uat.outputs.tag && steps.qa.outputs.tag != ''
+        env:
+          QA_TAG: ${{ steps.qa.outputs.tag }}
+        run: |
+          sed -i "s/^imageTag: .*/imageTag: ${QA_TAG}/" gitops/environments/uat/values.yaml
+          short_sha="${QA_TAG::7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gitops/environments/uat/values.yaml
+          git commit -m "chore(gitops): promote uat to ${short_sha} [skip ci]"
+          git push

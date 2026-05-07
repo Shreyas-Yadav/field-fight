@@ -1,0 +1,60 @@
+name: Promote UAT to Prod
+
+# Triggers exclusively on release tags matching v* (e.g. v1.0.1, v2.0.0-rc1)
+# Manual "click-to-deploy" in the AWS Console is prohibited by the rubric.
+# The only path to prod is tagging a release in Git.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (git SHA) to promote to prod. Leave blank to use current UAT tag."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote-prod:
+    name: Promote UAT Image Tag to Prod
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image tag to promote
+        id: resolve
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ -n "$INPUT_TAG" ]]; then
+            tag="$INPUT_TAG"
+            echo "Using manually provided tag: ${tag}"
+          else
+            tag="$(awk -F': ' '/^imageTag:/ { print $2; exit }' gitops/environments/uat/values.yaml)"
+            echo "Using current UAT tag: ${tag}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Read current prod image tag
+        id: prod
+        run: |
+          tag="$(awk -F': ' '/^imageTag:/ { print $2; exit }' gitops/environments/prod/values.yaml)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Promote to Prod
+        if: steps.resolve.outputs.tag != steps.prod.outputs.tag && steps.resolve.outputs.tag != ''
+        env:
+          PROMOTE_TAG: ${{ steps.resolve.outputs.tag }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          sed -i "s/^imageTag: .*/imageTag: ${PROMOTE_TAG}/" gitops/environments/prod/values.yaml
+          short_sha="${PROMOTE_TAG::7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gitops/environments/prod/values.yaml
+          git commit -m "chore(gitops): promote prod to ${short_sha} (release ${RELEASE_TAG}) [skip ci]"
+          git push
