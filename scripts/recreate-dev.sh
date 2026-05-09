@@ -480,14 +480,30 @@ phase_stop() {
 
   init_dev_backend
 
+  # Delete ingresses first so the AWS Load Balancer Controller cleans up the
+  # ALB before we destroy the cluster. Otherwise the ALB can be orphaned.
+  if kubectl get nodes >/dev/null 2>&1; then
+    echo "Deleting ingresses so the LBC removes the ALB cleanly..."
+    kubectl delete ingress --all-namespaces --all --ignore-not-found --timeout=60s || true
+    sleep 30  # give the controller time to deregister the ALB
+  fi
+
   echo "Removing K8s/Helm-managed resources from Terraform state..."
-  for addr in \
-    "kubernetes_namespace.argocd[0]" \
-    "helm_release.argocd[0]" \
-    "kubernetes_secret.argocd_repo_credentials[0]" \
-    "helm_release.aws_load_balancer_controller[0]"; do
-    terraform -chdir="$DEV_DIR" state rm "$addr" 2>/dev/null || true
-  done
+  # List every resource in state whose type starts with kubernetes_ or helm_,
+  # then remove them. This covers anything we add to argocd.tf or load-balancer-controller.tf
+  # without needing to update this list.
+  local k8s_resources
+  k8s_resources="$(terraform -chdir="$DEV_DIR" state list 2>/dev/null \
+    | grep -E '^(kubernetes_|helm_)' || true)"
+  if [[ -n "$k8s_resources" ]]; then
+    while IFS= read -r addr; do
+      [[ -z "$addr" ]] && continue
+      echo "  removing: $addr"
+      terraform -chdir="$DEV_DIR" state rm "$addr" 2>/dev/null || true
+    done <<< "$k8s_resources"
+  else
+    echo "  (none in state — first-time stop or already cleaned)"
+  fi
 
   echo "Destroying EKS + NAT Gateway, keeping RDS/Route53/ACM..."
   apply_tf "$DEV_DIR" \
@@ -496,7 +512,7 @@ phase_stop() {
     -var="install_argocd=false" \
     -var="install_aws_load_balancer_controller=false" \
     -var="enable_nat_gateway=false" \
-    -var="single_nat_gateway=false" \
+    -var="single_nat_gateway=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
     -var="create_grafana_certificate=false" \

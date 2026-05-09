@@ -48,7 +48,9 @@ resource "terraform_data" "argocd_root_app" {
   ]
 
   provisioner "local-exec" {
-    command = "kubectl apply -f ../../../gitops/root.yaml"
+    # Refresh kubeconfig first so this works even after a stop/start cycle
+    # where the cluster was recreated with a new endpoint hostname.
+    command = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this[0].name} && kubectl apply -f ../../../gitops/root.yaml"
   }
 
   depends_on = [helm_release.argocd]
