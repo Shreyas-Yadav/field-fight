@@ -34,15 +34,6 @@ prometheus:
     # Ephemeral storage — fine for dev. Production should use a PVC.
     storageSpec: {}
 
-alertmanager:
-  enabled: true
-  alertmanagerSpec:
-    retention: 24h
-    resources:
-      requests:
-        cpu: 20m
-        memory: 50Mi
-
 grafana:
   enabled: true
   defaultDashboardsEnabled: true
@@ -113,11 +104,11 @@ grafana:
       api_url: https://api.github.com/user
       client_id: $__env{GF_AUTH_GITHUB_CLIENT_ID}
       client_secret: $__env{GF_AUTH_GITHUB_CLIENT_SECRET}
-      # Grant the Admin role to whoever passes OAuth. We removed the
-      # allowed_organizations check because the lab uses a personal GitHub
-      # account (not an org). For a real production setup, restrict via
-      # allowed_organizations or team_ids.
-      role_attribute_path: "'Admin'"
+      # Don't overwrite the user's role on each login — let auto_assign_org_role
+      # (Admin) handle initial role assignment, and allow manual role edits via
+      # the API to persist. Without this, OAuth users are locked to whatever
+      # role_attribute_path returns.
+      skip_org_role_sync: true
 
 # Alertmanager: route everything to a Slack receiver. Webhook URL is taken
 # from the K8s Secret created by `recreate-dev.sh secrets`.
