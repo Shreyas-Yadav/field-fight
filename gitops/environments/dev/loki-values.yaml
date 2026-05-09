@@ -26,6 +26,15 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: false  # ephemeral; production should set true with a storageClass
+  # When persistence is disabled the chart does not mount any writable volume
+  # at /var/loki, so we add one explicitly. Logs are wiped on pod restart —
+  # acceptable in the lab environment.
+  extraVolumes:
+    - name: storage
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: storage
+      mountPath: /var/loki
   resources:
     requests:
       cpu: 100m
