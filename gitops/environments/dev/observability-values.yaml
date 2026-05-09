@@ -133,6 +133,9 @@ alertmanager:
       repeat_interval: 12h
       receiver: 'slack'
     receivers:
+      # Keep "null" — kube-prometheus-stack's default route sends the
+      # Watchdog (heartbeat) alert here so it doesn't spam Slack.
+      - name: 'null'
       - name: 'slack'
         slack_configs:
           - channel: '#alerts'
