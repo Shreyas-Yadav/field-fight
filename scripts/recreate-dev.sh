@@ -11,8 +11,8 @@ SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$ROOT/secrets.env}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 LAB_ROLE_NAME="${LAB_ROLE_NAME:-LabRole}"
 EKS_NODE_TYPE="${EKS_NODE_TYPE:-t3.medium}"
-EKS_NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-3}"
-EKS_NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-4}"
+EKS_NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-4}"
+EKS_NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-5}"
 INGRESS_NAMESPACE="${INGRESS_NAMESPACE:-field-fight-dev}"
 INGRESS_NAME="${INGRESS_NAME:-field-fight-dev-frontend}"
 INGRESS_WAIT_SECONDS="${INGRESS_WAIT_SECONDS:-900}"
@@ -35,8 +35,8 @@ Environment:
   AWS_REGION            default: us-east-1
   LAB_ROLE_NAME         default: LabRole
   EKS_NODE_TYPE         default: t3.medium
-  EKS_NODE_DESIRED_SIZE default: 3
-  EKS_NODE_MAX_SIZE     default: 4
+  EKS_NODE_DESIRED_SIZE default: 4
+  EKS_NODE_MAX_SIZE     default: 5
   AUTO_APPROVE          default: false
   SECRETS_ENV_FILE      default: <repo-root>/secrets.env
 

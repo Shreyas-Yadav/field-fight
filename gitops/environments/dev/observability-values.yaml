@@ -81,7 +81,7 @@ grafana:
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
       alb.ingress.kubernetes.io/ssl-redirect: "443"
       alb.ingress.kubernetes.io/group.name: field-fight
-      alb.ingress.kubernetes.io/certificate-arn: REPLACE_ME_BY_VALIDATE_PHASE
+      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:272772901676:certificate/afdcf64a-b8ac-4eb3-81cd-a1f949092f48
 
   # Read OAuth credentials from the K8s Secret created by `recreate-dev.sh secrets`.
   envFromSecret: grafana-oauth
