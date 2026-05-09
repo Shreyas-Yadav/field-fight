@@ -1,4 +1,51 @@
+# `imageTag` is the global default used by:
+#   - the one-shot migration Job (runs once per deploy)
+#   - any service that doesn't have a per-color tag set below
+# When blue/green is enabled, app pods get their tag from
+# `blueGreen.tags.{blue,green}` instead, so this field only really matters
+# for the migration Job in prod.
 imageTag: 3bfcd5999caab21997c579e61b8f72cd5cbd5d78
+
+# Phase 6: Blue/Green for prod only.
+#
+# Both colors start running the SAME image. To deploy a new version:
+#   1. Build + push the new image (CI does this on push to main).
+#   2. Update `blueGreen.tags.green` (or whichever color is INACTIVE) to the
+#      new SHA. Commit + push. ArgoCD applies — green pods roll to the new
+#      image while blue keeps serving.
+#   3. Verify green is healthy (port-forward, dashboards, logs).
+#   4. Flip `blueGreen.activeColor` to green. Commit + push. ArgoCD applies
+#      the Service selector update — traffic moves to green instantly.
+#   5. If anything breaks: `git revert` the activeColor commit. Traffic
+#      returns to blue (still running old version) within seconds.
+blueGreen:
+  enabled: true
+  activeColor: blue
+  standbyReplicas: 1
+  tags:
+    blue: 3bfcd5999caab21997c579e61b8f72cd5cbd5d78
+    green: 3bfcd5999caab21997c579e61b8f72cd5cbd5d78
+
+# PodDisruptionBudgets prevent node drains from evicting both replicas of the
+# active color simultaneously (Day 2 patching demo).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Per-service overrides for prod. Each service runs 2 replicas so the PDB
+# (minAvailable: 1) can actually allow a node drain without deadlocking.
+# Lower envs keep replicaCount at the chart default (1) to save resources.
+services:
+  frontend:
+    replicaCount: 2
+  game-server:
+    replicaCount: 2
+  leaderboard-api:
+    replicaCount: 2
+  auth-service:
+    replicaCount: 2
+  match-history-service:
+    replicaCount: 2
 
 registry:
   accountId: "272772901676"
@@ -39,4 +86,6 @@ ingress:
   host: field-fight.shri.software
   certificateArn: arn:aws:acm:us-east-1:272772901676:certificate/c3dcd5c3-f2a1-4756-aa7a-cc380049745c
   groupName: field-fight
-  annotations: {}
+  annotations:
+    # Give the ALB time to deregister pods before they're killed during cutover.
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30

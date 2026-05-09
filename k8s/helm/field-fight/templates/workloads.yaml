@@ -1,27 +1,59 @@
 {{- $root := . -}}
+{{- $bg := $root.Values.blueGreen | default dict -}}
+{{- $bgEnabled := $bg.enabled | default false -}}
+{{- $colors := list "" -}}
+{{- if $bgEnabled }}{{ $colors = list "blue" "green" }}{{ end }}
+{{- $graceful := $root.Values.gracefulShutdown | default dict -}}
+{{- $preStopSleep := $graceful.preStopSleepSeconds | default 10 -}}
+{{- $termGrace := $graceful.terminationGracePeriodSeconds | default 30 -}}
 {{- range $serviceName, $service := .Values.services }}
+{{- range $color := $colors }}
+{{- $isActive := or (not $bgEnabled) (eq $color $bg.activeColor) }}
+{{- $baseName := include "field-fight.backendName" (dict "root" $root "service" $serviceName) }}
+{{- $deployName := $baseName }}
+{{- if $bgEnabled }}{{ $deployName = printf "%s-%s" $baseName $color }}{{ end }}
+{{- /*
+     Image tag resolution:
+     1. service.image.tag if set
+     2. blueGreen.tags.<color> if set (and bg enabled)
+     3. global imageTag
+*/}}
+{{- $resolvedTag := $service.image.tag | default $root.Values.imageTag -}}
+{{- if and $bgEnabled (index $bg.tags $color) }}
+  {{- $resolvedTag = index $bg.tags $color }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "field-fight.backendName" (dict "root" $root "service" $serviceName) }}
+  name: {{ $deployName }}
   labels:
     {{- include "field-fight.labels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $serviceName | quote }}
+    {{- if $bgEnabled }}
+    color: {{ $color | quote }}
+    {{- end }}
 spec:
-  replicas: {{ $service.replicaCount }}
+  replicas: {{ if $isActive }}{{ $service.replicaCount }}{{ else }}{{ $bg.standbyReplicas | default 1 }}{{ end }}
   selector:
     matchLabels:
       {{- include "field-fight.selectorLabels" $root | nindent 6 }}
       app.kubernetes.io/component: {{ $serviceName | quote }}
+      {{- if $bgEnabled }}
+      color: {{ $color | quote }}
+      {{- end }}
   template:
     metadata:
       labels:
         {{- include "field-fight.selectorLabels" $root | nindent 8 }}
         app.kubernetes.io/component: {{ $serviceName | quote }}
+        {{- if $bgEnabled }}
+        color: {{ $color | quote }}
+        {{- end }}
     spec:
+      terminationGracePeriodSeconds: {{ $termGrace }}
       containers:
         - name: {{ $serviceName }}
-          image: {{ include "field-fight.imageRef" (dict "root" $root "image" $service.image) | quote }}
+          image: "{{ printf "%s:%s" (include "field-fight.imageRepository" (dict "Values" $root.Values "suffix" $service.image.suffix)) $resolvedTag }}"
           imagePullPolicy: {{ $service.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - containerPort: {{ $service.containerPort }}
@@ -39,6 +71,12 @@ spec:
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
           {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                # Sleep before SIGTERM so the ALB has time to deregister the
+                # pod from the target group; in-flight requests can drain.
+                command: ["sh", "-c", "sleep {{ $preStopSleep }}"]
           readinessProbe:
             httpGet:
               path: {{ $service.healthPath | quote }}
@@ -64,6 +102,7 @@ spec:
             name: {{ include "field-fight.fullname" $root }}-frontend-nginx
       {{- end }}
 ---
+{{- end }}{{/* end color loop */}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -76,10 +115,13 @@ spec:
   selector:
     {{- include "field-fight.selectorLabels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $serviceName | quote }}
+    {{- if $bgEnabled }}
+    color: {{ $bg.activeColor | quote }}
+    {{- end }}
   ports:
     - name: http
       port: {{ $service.servicePort }}
       targetPort: http
       protocol: TCP
 ---
-{{- end }}
+{{- end }}{{/* end services loop */}}

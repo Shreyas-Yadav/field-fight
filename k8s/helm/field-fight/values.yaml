@@ -1,5 +1,32 @@
 imageTag: ""
 
+# Blue/Green deployment toggle. When `enabled: true`, every service runs as
+# TWO Deployments suffixed with -blue and -green. The Service selector points
+# at whichever color is in `activeColor`. Per-color image tags allow the two
+# colors to run different versions during a cutover.
+#
+# Disabled by default — only the prod environment turns this on. Lower envs
+# use rolling updates for fast iteration.
+blueGreen:
+  enabled: false
+  activeColor: blue              # blue or green — controls Service selector
+  standbyReplicas: 1             # replica count for the non-active color
+  tags:                          # per-color image tags (override global imageTag)
+    blue: ""                     # empty → falls back to global imageTag
+    green: ""                    # empty → falls back to global imageTag
+
+# Pod disruption budgets. When enabled, kubectl drain (e.g. node patching)
+# will not evict the last replica of a service, preventing zero-replica gaps.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Graceful shutdown — preStop sleep gives the ALB time to deregister the pod
+# before SIGTERM is sent, so in-flight requests aren't dropped.
+gracefulShutdown:
+  preStopSleepSeconds: 10
+  terminationGracePeriodSeconds: 30
+
 registry:
   accountId: ""
   region: ""

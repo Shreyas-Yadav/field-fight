@@ -1,0 +1,39 @@
+{{- if .Values.podDisruptionBudget.enabled -}}
+{{- $root := . -}}
+{{- $minAvailable := .Values.podDisruptionBudget.minAvailable | default 1 -}}
+{{- $bg := $root.Values.blueGreen | default dict -}}
+{{- $bgEnabled := $bg.enabled | default false -}}
+{{- range $serviceName, $service := .Values.services }}
+{{- /*
+     When blue/green is enabled, create one PDB per color per service so that
+     a node drain can't take down both replicas of the active color.
+     When disabled, one PDB per service.
+*/}}
+{{- $colors := list "" }}
+{{- if $bgEnabled }}{{ $colors = list "blue" "green" }}{{ end }}
+{{- range $color := $colors }}
+{{- $name := include "field-fight.backendName" (dict "root" $root "service" $serviceName) }}
+{{- if $bgEnabled }}{{ $name = printf "%s-%s" $name $color }}{{ end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "field-fight.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $serviceName | quote }}
+    {{- if $bgEnabled }}
+    color: {{ $color | quote }}
+    {{- end }}
+spec:
+  minAvailable: {{ $minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "field-fight.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $serviceName | quote }}
+      {{- if $bgEnabled }}
+      color: {{ $color | quote }}
+      {{- end }}
+---
+{{- end }}{{/* end color loop */}}
+{{- end }}{{/* end services loop */}}
+{{- end }}{{/* end if pdb.enabled */}}
