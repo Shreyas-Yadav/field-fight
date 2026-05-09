@@ -67,6 +67,35 @@ jobs:
       - name: Build frontend
         run: npm run build --prefix frontend
 
+  terraform-checks:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        stack:
+          - terraform/ecr
+          - terraform/environments/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: terraform fmt -check
+        run: terraform -chdir=${{ matrix.stack }} fmt -check -recursive
+
+      - name: terraform init -backend=false
+        run: terraform -chdir=${{ matrix.stack }} init -backend=false
+
+      - name: terraform validate
+        run: terraform -chdir=${{ matrix.stack }} validate
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
