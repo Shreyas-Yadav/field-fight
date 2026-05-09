@@ -175,6 +175,45 @@ for env, arn in arns.items():
 PY
 }
 
+update_grafana_cert_arn() {
+  # Read the Grafana ACM cert ARN from Terraform output and patch
+  # gitops/environments/dev/observability-values.yaml so the Grafana ingress
+  # block has the right cert. Idempotent.
+  local grafana_cert_arn
+  grafana_cert_arn="$(terraform -chdir="$DEV_DIR" output -raw grafana_certificate_arn 2>/dev/null || true)"
+
+  if [[ -z "$grafana_cert_arn" || "$grafana_cert_arn" == "null" ]]; then
+    echo "No Grafana certificate ARN in Terraform output (skip)."
+    return 0
+  fi
+
+  local values_file="$ROOT/gitops/environments/dev/observability-values.yaml"
+  if [[ ! -f "$values_file" ]]; then
+    echo "observability-values.yaml not found, skipping Grafana cert update."
+    return 0
+  fi
+
+  python3 - "$values_file" "$grafana_cert_arn" <<'PY'
+import re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+arn = sys.argv[2]
+text = path.read_text()
+# Replace the placeholder in the Grafana ingress section's certificateArn
+new_text, n = re.subn(
+    r'(alb\.ingress\.kubernetes\.io/certificate-arn:\s*).*',
+    rf'\1{arn}',
+    text,
+    count=1,
+)
+if n == 0:
+    print(f"  [grafana] no certificateArn placeholder found in {path}")
+else:
+    path.write_text(new_text)
+    print(f"  [grafana] cert ARN patched: {arn[-20:]}")
+PY
+}
+
 wait_for_ingress_hostname() {
   local deadline=$((SECONDS + INGRESS_WAIT_SECONDS))
   local hostname=""
@@ -218,7 +257,7 @@ phase_up() {
     -var="install_aws_load_balancer_controller=false" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=false" \
+    -var="create_grafana_certificate=true" \
     -var="validate_frontend_certificate=false" \
     -var="validate_grafana_certificate=false" \
     -var="eks_cluster_role_arn=${role_arn}" \
@@ -329,9 +368,9 @@ phase_validate() {
     -var="install_aws_load_balancer_controller=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=false" \
+    -var="create_grafana_certificate=true" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=false" \
+    -var="validate_grafana_certificate=true" \
     -var="validate_additional_certificates=true" \
     -var="frontend_alb_dns_name=${existing_alb_dns}" \
     -var="frontend_alb_zone_id=${existing_alb_zone}" \
@@ -343,6 +382,9 @@ phase_validate() {
 
   # Patch qa/uat/prod values.yaml with the freshly-validated cert ARNs.
   update_additional_env_values
+
+  # Patch observability-values.yaml with the Grafana cert ARN.
+  update_grafana_cert_arn
 
   echo
   echo "============================================================"
@@ -374,9 +416,9 @@ phase_gitops() {
     -var="install_aws_load_balancer_controller=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=false" \
+    -var="create_grafana_certificate=true" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=false" \
+    -var="validate_grafana_certificate=true" \
     -var="validate_additional_certificates=true" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
@@ -436,12 +478,14 @@ phase_finish() {
     -var="install_aws_load_balancer_controller=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=false" \
+    -var="create_grafana_certificate=true" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=false" \
+    -var="validate_grafana_certificate=true" \
     -var="validate_additional_certificates=true" \
     -var="frontend_alb_dns_name=${frontend_alb_dns_name}" \
     -var="frontend_alb_zone_id=${frontend_alb_zone_id}" \
+    -var="grafana_alb_dns_name=${frontend_alb_dns_name}" \
+    -var="grafana_alb_zone_id=${frontend_alb_zone_id}" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
@@ -515,9 +559,9 @@ phase_stop() {
     -var="single_nat_gateway=true" \
     -var="create_route53_zone=true" \
     -var="create_frontend_certificate=true" \
-    -var="create_grafana_certificate=false" \
+    -var="create_grafana_certificate=true" \
     -var="validate_frontend_certificate=true" \
-    -var="validate_grafana_certificate=false" \
+    -var="validate_grafana_certificate=true" \
     -var="validate_additional_certificates=true" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}"
@@ -700,6 +744,51 @@ wait_for_migration() {
   return 1
 }
 
+apply_observability_secrets() {
+  # Create two Secrets in the observability namespace:
+  #   - grafana-oauth: env vars consumed by Grafana for GitHub OAuth
+  #   - alertmanager-slack: file mounted by Alertmanager with the Slack URL
+  # Skips silently if observability namespace doesn't exist yet (first deploy).
+
+  if ! kubectl get namespace observability >/dev/null 2>&1; then
+    echo "[observability] namespace not present yet — skipping OAuth/Slack secrets"
+    return 0
+  fi
+
+  local missing=()
+  for var in GF_AUTH_GITHUB_CLIENT_ID GF_AUTH_GITHUB_CLIENT_SECRET GF_AUTH_GITHUB_ALLOWED_ORGS SLACK_WEBHOOK_URL; do
+    if [[ -z "${!var:-}" ]]; then
+      missing+=("$var")
+    fi
+  done
+  if (( ${#missing[@]} > 0 )); then
+    echo "[observability] skipping — missing keys in secrets.env: ${missing[*]}"
+    return 0
+  fi
+
+  echo
+  echo "------------------------------------------------------------"
+  echo "  Applying observability secrets (Grafana OAuth + Slack)"
+  echo "------------------------------------------------------------"
+
+  kubectl create secret generic grafana-oauth \
+    --namespace=observability \
+    --from-literal=GF_AUTH_GITHUB_CLIENT_ID="$GF_AUTH_GITHUB_CLIENT_ID" \
+    --from-literal=GF_AUTH_GITHUB_CLIENT_SECRET="$GF_AUTH_GITHUB_CLIENT_SECRET" \
+    --from-literal=GF_AUTH_GITHUB_ALLOWED_ORGS="$GF_AUTH_GITHUB_ALLOWED_ORGS" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl create secret generic alertmanager-slack \
+    --namespace=observability \
+    --from-literal=slack_webhook_url="$SLACK_WEBHOOK_URL" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  echo "[observability] secrets applied"
+
+  # Restart Grafana so it picks up the new env vars.
+  kubectl -n observability rollout restart deployment/field-fight-monitoring-grafana 2>/dev/null || true
+}
+
 phase_secrets() {
   need_cmd kubectl
   need_cmd python3
@@ -732,6 +821,9 @@ phase_secrets() {
   for env in "${envs[@]}"; do
     apply_secret_for_env "$env"
   done
+
+  # Apply observability secrets (Grafana OAuth + Slack webhook).
+  apply_observability_secrets
 
   echo
   echo "------------------------------------------------------------"

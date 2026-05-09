@@ -46,18 +46,20 @@ alertmanager:
 grafana:
   enabled: true
   defaultDashboardsEnabled: true
-  # Phase 5a: ClusterIP only. Phase 5c flips to ALB ingress + OAuth.
   service:
     type: ClusterIP
-  adminPassword: changeme-replace-in-5c
+
+  # Admin password is irrelevant once GitHub OAuth is the only login path,
+  # but we still set one so the bootstrap doesn't break.
+  adminPassword: bootstrap-only-not-used-for-login
   persistence:
     enabled: false
   resources:
     requests:
       cpu: 50m
       memory: 150Mi
-  # Add Loki as an additional Grafana data source so the Explore tab can query
-  # logs alongside the Prometheus metrics that ship by default.
+
+  # Loki as an additional data source so the Explore tab can query logs.
   additionalDataSources:
     - name: Loki
       type: loki
@@ -66,6 +68,80 @@ grafana:
       jsonData:
         timeout: 60
         maxLines: 1000
+
+  # Phase 5c: HTTPS via shared ALB ingress group + GitHub OAuth.
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    hosts:
+      - grafana-dev.shri.software
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/group.name: field-fight
+      alb.ingress.kubernetes.io/certificate-arn: REPLACE_ME_BY_VALIDATE_PHASE
+
+  # Read OAuth credentials from the K8s Secret created by `recreate-dev.sh secrets`.
+  envFromSecret: grafana-oauth
+
+  grafana.ini:
+    server:
+      root_url: https://grafana-dev.shri.software
+      domain: grafana-dev.shri.software
+    auth:
+      disable_login_form: true       # block password login per rubric
+      oauth_auto_login: true
+    auth.basic:
+      enabled: false
+    auth.github:
+      enabled: true
+      allow_sign_up: true
+      scopes: user:email,read:org
+      auth_url: https://github.com/login/oauth/authorize
+      token_url: https://github.com/login/oauth/access_token
+      api_url: https://api.github.com/user
+      client_id: $__env{GF_AUTH_GITHUB_CLIENT_ID}
+      client_secret: $__env{GF_AUTH_GITHUB_CLIENT_SECRET}
+      allowed_organizations: $__env{GF_AUTH_GITHUB_ALLOWED_ORGS}
+      role_attribute_path: "'Admin'"  # everyone who passes OAuth is Admin
+
+# Alertmanager: route everything to a Slack receiver. Webhook URL is taken
+# from the K8s Secret created by `recreate-dev.sh secrets`.
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    retention: 24h
+    resources:
+      requests:
+        cpu: 20m
+        memory: 50Mi
+    secrets:
+      - alertmanager-slack
+  config:
+    global:
+      resolve_timeout: 5m
+      slack_api_url_file: /etc/alertmanager/secrets/alertmanager-slack/slack_webhook_url
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'slack'
+    receivers:
+      - name: 'slack'
+        slack_configs:
+          - channel: '#alerts'
+            send_resolved: true
+            title: '{{ .Status | toUpper }} - {{ .CommonLabels.alertname }}'
+            text: |-
+              {{ range .Alerts }}
+              *{{ .Annotations.summary }}*
+              {{ .Annotations.description }}
+              Severity: `{{ .Labels.severity }}`
+              Namespace: `{{ .Labels.namespace }}`
+              {{ end }}
 
 kube-state-metrics:
   resources:

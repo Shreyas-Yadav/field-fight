@@ -1,0 +1,82 @@
+# Sample PrometheusRules for Phase 5c.
+# Deployed by the field-fight-observability-monitors-dev Argo CD Application
+# (the directory app picks up every YAML in gitops/observability/dev).
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: field-fight-alerts
+  namespace: observability
+  labels:
+    release: field-fight-monitoring
+spec:
+  groups:
+    - name: field-fight.rules
+      interval: 30s
+      rules:
+        # ---- Node health ----
+        - alert: NodeHighCPU
+          expr: |
+            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU on {{ $labels.instance }}"
+            description: "CPU is at {{ $value | humanize }}% for over 5 minutes."
+
+        - alert: NodeHighMemory
+          expr: |
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory on {{ $labels.instance }}"
+            description: "Memory used is {{ $value | humanize }}% for over 5 minutes."
+
+        - alert: NodeDiskNearFull
+          expr: |
+            (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} /
+                  node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Disk near full on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+            description: "Disk usage is {{ $value | humanize }}%."
+
+        # ---- Pod health ----
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace=~"field-fight-.*"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} crash-looping"
+            description: "Container {{ $labels.container }} restarted recently."
+
+        - alert: PodNotReady
+          expr: |
+            sum by (namespace, pod) (kube_pod_status_ready{condition="false",
+                                                          namespace=~"field-fight-.*"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} not ready"
+            description: "Pod has been not-ready for 10 minutes."
+
+        # ---- App health ----
+        - alert: AppHigh5xx
+          expr: |
+            sum by (namespace, app) (rate(http_requests_total{status=~"5..",
+                                                              namespace=~"field-fight-.*"}[5m])) > 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High 5xx rate in {{ $labels.namespace }}/{{ $labels.app }}"
+            description: "More than 1 5xx/sec for 5 minutes."
