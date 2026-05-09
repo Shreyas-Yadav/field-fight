@@ -98,14 +98,17 @@ grafana:
     auth.github:
       enabled: true
       allow_sign_up: true
-      scopes: user:email,read:org
+      scopes: user:email
       auth_url: https://github.com/login/oauth/authorize
       token_url: https://github.com/login/oauth/access_token
       api_url: https://api.github.com/user
       client_id: $__env{GF_AUTH_GITHUB_CLIENT_ID}
       client_secret: $__env{GF_AUTH_GITHUB_CLIENT_SECRET}
-      allowed_organizations: $__env{GF_AUTH_GITHUB_ALLOWED_ORGS}
-      role_attribute_path: "'Admin'"  # everyone who passes OAuth is Admin
+      # Grant the Admin role to whoever passes OAuth. We removed the
+      # allowed_organizations check because the lab uses a personal GitHub
+      # account (not an org). For a real production setup, restrict via
+      # allowed_organizations or team_ids.
+      role_attribute_path: "'Admin'"
 
 # Alertmanager: route everything to a Slack receiver. Webhook URL is taken
 # from the K8s Secret created by `recreate-dev.sh secrets`.
