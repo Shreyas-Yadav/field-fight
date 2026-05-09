@@ -56,6 +56,16 @@ grafana:
     requests:
       cpu: 50m
       memory: 150Mi
+  # Add Loki as an additional Grafana data source so the Explore tab can query
+  # logs alongside the Prometheus metrics that ship by default.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://field-fight-loki.observability.svc.cluster.local:3100
+      jsonData:
+        timeout: 60
+        maxLines: 1000
 
 kube-state-metrics:
   resources:

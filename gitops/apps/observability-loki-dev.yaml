@@ -1,0 +1,33 @@
+# Loki — log database. Multi-source ArgoCD Application.
+# Pulls the loki chart from the Grafana Helm repo and combines it with our
+# values from this Git repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: field-fight-observability-loki-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.16.0
+      helm:
+        releaseName: field-fight-loki
+        valueFiles:
+          - $values/gitops/environments/dev/loki-values.yaml
+    - repoURL: https://github.com/Shreyas-Yadav/field-fight.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

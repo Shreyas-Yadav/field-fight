@@ -1,0 +1,31 @@
+# Promtail values — runs as a DaemonSet, one pod per node.
+# Each Promtail pod tails container logs on its node and ships them to Loki.
+
+config:
+  clients:
+    - url: http://field-fight-loki.observability.svc.cluster.local:3100/loki/api/v1/push
+
+  # Default snippet enriches log lines with kubernetes labels:
+  #   namespace, pod, container, node_name, app, instance
+  # We add an `environment` label derived from the namespace prefix so queries
+  # can filter by env directly: {environment="prod"} or {environment="dev"}.
+  snippets:
+    extraRelabelConfigs:
+      - source_labels:
+          - __meta_kubernetes_namespace
+        regex: "field-fight-(.*)"
+        target_label: environment
+        replacement: "$1"
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_component
+        target_label: component
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 50Mi
+  limits:
+    memory: 150Mi
+
+serviceMonitor:
+  enabled: true  # let Prometheus scrape Promtail itself

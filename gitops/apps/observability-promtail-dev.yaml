@@ -1,0 +1,32 @@
+# Promtail — log shipper. DaemonSet, one pod per node.
+# Tails container logs and pushes them to Loki.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: field-fight-observability-promtail-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: promtail
+      targetRevision: 6.16.6
+      helm:
+        releaseName: field-fight-promtail
+        valueFiles:
+          - $values/gitops/environments/dev/promtail-values.yaml
+    - repoURL: https://github.com/Shreyas-Yadav/field-fight.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
