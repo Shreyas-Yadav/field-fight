@@ -90,11 +90,17 @@ grafana:
     server:
       root_url: https://grafana-dev.shri.software
       domain: grafana-dev.shri.software
+    explore:
+      enabled: true               # ensure Explore is available even for Viewer
+    users:
+      auto_assign_org_role: Admin # default role for new users (OAuth)
     auth:
-      disable_login_form: true       # block password login per rubric
+      disable_login_form: true       # block password login on UI per rubric
       oauth_auto_login: true
     auth.basic:
-      enabled: false
+      # Keep basic auth ENABLED for the API (separate from the UI login form,
+      # which stays disabled). Without this, admin API calls fail 401.
+      enabled: true
     auth.github:
       enabled: true
       allow_sign_up: true
