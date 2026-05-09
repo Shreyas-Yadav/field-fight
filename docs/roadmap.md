@@ -79,10 +79,12 @@ steps.
   does the cluster deployment.
 - [x] HTTPS for all 4 environments via shared ALB ingress group (one ALB
   serves dev/qa/uat/prod with separate ACM certs).
-- [ ] Document a rollback path: revert the values commit on the target
-  environment branch.
-- [ ] Add Terraform format/validate/plan checks for environment changes.
-- [ ] Document the promotion chain for the final demo.
+- [x] Document a rollback path: revert the values commit on the target
+  environment branch (see `docs/promotion-flow.md`).
+- [x] Add Terraform format/validate checks for environment changes (PR check
+  added to `.github/workflows/pr-checks.yml`).
+- [x] Document the promotion chain for the final demo (see
+  `docs/promotion-flow.md`).
 
 ## Phase 5: Self-Hosted Observability and Logging
 
