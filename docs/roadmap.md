@@ -134,20 +134,26 @@ queries to *prove* zero dropped requests and successful schema migration.
 Scope this to the `prod` environment only. Dev/QA/UAT use rolling updates to
 keep iteration fast and avoid duplicating workloads in cheaper environments.
 
-- [ ] Pick **blue/green** as the EKS release strategy for prod.
-- [ ] Justify blue/green: simple demo, fast rollback, clear before/after
-  traffic switch, less operational complexity than canary.
-- [ ] Add blue and green Deployment variants in the helm chart, gated by a
-  values toggle so only prod uses them.
-- [ ] Route traffic only to the active color through a Service `selector`
-  managed in Git.
-- [ ] Keep the inactive color running until the new color passes readiness
-  checks.
-- [ ] Configure graceful shutdown (`preStop` + `terminationGracePeriodSeconds`)
-  and ALB deregistration delay.
-- [ ] Add PodDisruptionBudgets for services that should stay available.
-- [ ] Demonstrate rollback by reverting the Git commit that flipped colors.
-- [ ] Verify promotion causes zero dropped requests using Phase 5 dashboards.
+- [x] Pick **blue/green** as the EKS release strategy for prod.
+- [x] Justify blue/green: simple demo, fast rollback, clear before/after
+  traffic switch, less operational complexity than canary
+  (see `docs/blue-green.md`).
+- [x] Add blue and green Deployment variants in the helm chart, gated by
+  the `blueGreen.enabled` values toggle (only prod uses them; dev/qa/uat
+  stay on rolling updates).
+- [x] Route traffic only to the active color through a Service `selector`
+  managed in Git (`color: blue|green`).
+- [x] Keep the inactive color running at `standbyReplicas: 1` so a
+  cutover always has a Ready pod to flip to.
+- [x] Configure graceful shutdown (`preStop` sleep 10s +
+  `terminationGracePeriodSeconds: 30`) and ALB target-group
+  `deregistration_delay.timeout_seconds=30`.
+- [x] Add PodDisruptionBudgets for every `<service>-<color>` pair
+  (`k8s/helm/field-fight/templates/pdbs.yaml`).
+- [x] Document rollback as `git revert` of the activeColor commit
+  (`docs/blue-green.md`).
+- [ ] Run a live cutover during the final demo and verify zero dropped
+  requests using the Grafana 5xx panel (saved for Phase 8).
 
 ## Phase 7: Mandatory Day 2 Scenarios
 
