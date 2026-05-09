@@ -19,7 +19,7 @@ re-pushes when you resume.
 |---|---|---|
 | RDS db.t4g.micro | ~$0.40 | Preserve game data |
 | Route53 hosted zone | ~$0.02 | Avoid redoing DNS delegation |
-| ACM certificates (4 — dev/qa/uat/prod) | $0 | Avoid revalidation wait |
+| ACM certificates (5 — dev/qa/uat/prod + grafana) | $0 | Avoid revalidation wait |
 | ECR repositories | <$0.05 | Avoid re-pushing images |
 | VPC, subnets, SGs | $0 | Free, needed for resume |
 

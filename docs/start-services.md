@@ -121,10 +121,31 @@ bash scripts/recreate-dev.sh finish
 
 ```bash
 bash scripts/dev-status.sh
+
+# All 4 envs should return 200/301
 for h in field-fight-dev field-fight-qa field-fight-uat field-fight; do
   curl -I -s "https://$h.shri.software" | head -1
 done
+
+# Grafana login page should redirect to GitHub OAuth (302)
+curl -I -s https://grafana-dev.shri.software | head -3
 ```
+
+### 11. Sign in to Grafana and verify the observability stack
+
+Open `https://grafana-dev.shri.software` in a browser. You'll be redirected
+to GitHub for OAuth — first-time users come back as Admin (configured via
+`auto_assign_org_role: Admin`).
+
+Once logged in:
+
+- **Dashboards** → built-in `Kubernetes / Compute Resources / *` panels
+  show CPU/memory/pods for all 4 environments
+- **Explore** → switch data source to **Loki** and run
+  `{environment="dev"}` to see live logs
+- **Alerting → Alert rules** → 200+ rules including our `field-fight.rules`
+  group (CPU/memory/disk/pod/5xx alerts)
+- Slack `#alerts` channel receives Alertmanager notifications
 
 ---
 
@@ -146,12 +167,19 @@ in sequence. Takes ~15 minutes.
 
 ```bash
 bash scripts/dev-status.sh
+
+# App envs
 for h in field-fight-dev field-fight-qa field-fight-uat field-fight; do
   curl -I -s "https://$h.shri.software" | head -1
 done
+
+# Grafana
+curl -I -s https://grafana-dev.shri.software | head -1
 ```
 
-That's it — DNS, ACM, ECR images, RDS data all survived.
+That's it — DNS, ACM, ECR images, RDS data, and ACM certs (including
+Grafana's) all survived. The observability stack reinstalls automatically
+because ArgoCD redeploys the multi-source apps from the upstream Helm repo.
 
 ---
 

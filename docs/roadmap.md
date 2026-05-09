@@ -93,28 +93,41 @@ queries to *prove* zero dropped requests and successful schema migration.
 
 ### Phase 5a: Metrics
 
-- [ ] Add observability as a separate Argo CD application.
-- [ ] Deploy Prometheus and Grafana inside EKS via `kube-prometheus-stack`.
-- [ ] Add `kube-state-metrics`, `node-exporter`, and ServiceMonitors for
-  every backend service.
-- [ ] Add dashboards for node CPU, node memory, disk space, pod restarts,
-  request rate, latency, and 5xx responses.
+- [x] Add observability as a separate Argo CD application
+  (`field-fight-observability-dev` — multi-source app pulling
+  `kube-prometheus-stack 65.5.0` directly from the upstream Helm repo).
+- [x] Deploy Prometheus and Grafana inside EKS via `kube-prometheus-stack`.
+- [x] Add `kube-state-metrics`, `node-exporter`, and ServiceMonitors for
+  every backend service across all 4 environments
+  (`gitops/observability/dev/servicemonitors.yaml`).
+- [x] Add dashboards for node CPU, node memory, disk space, pod restarts,
+  request rate, latency, and 5xx responses (default dashboards from
+  `kube-prometheus-stack`).
 
 ### Phase 5b: Logs
 
-- [ ] Add Loki and Promtail for centralized logs across all backend
-  microservices.
-- [ ] Use ephemeral Loki storage in the AWS lab; document that production
-  should use S3 or EBS-backed durable storage.
-- [ ] Verify centralized log queries from Grafana Explore.
+- [x] Add Loki (single-binary) and Promtail (DaemonSet) for centralized
+  logs across all backend microservices via two more multi-source Argo CD
+  apps.
+- [x] Use ephemeral Loki storage (`emptyDir` mounted at `/var/loki`) in the
+  AWS lab; documented that production should use S3 or EBS-backed durable
+  storage.
+- [x] Verify centralized log queries from Grafana Explore using Loki
+  data source. Promtail tags every log with an `environment` label
+  (`dev`/`qa`/`uat`/`prod`) and a `component` label for fast filtering.
 
 ### Phase 5c: External Access and Alerts
 
-- [ ] Create ACM cert for `grafana-dev.shri.software` through Terraform.
-- [ ] Expose Grafana through ALB Ingress with HTTPS.
-- [ ] Protect Grafana with GitHub OAuth2; disable username/password login.
-- [ ] Add Alertmanager Slack notifications for critical CPU, memory, disk,
-  pod, and app-health thresholds.
+- [x] Create ACM cert for `grafana-dev.shri.software` through Terraform.
+- [x] Expose Grafana through ALB Ingress (joined to the shared
+  `field-fight` ingress group — no extra ALB cost).
+- [x] Protect Grafana with GitHub OAuth2; password login disabled
+  (`auth.basic.enabled: true` for API only, UI form hidden).
+- [x] Add Alertmanager Slack receiver wired to a Slack incoming webhook
+  via the `alertmanager-slack` Kubernetes Secret. Sample
+  `PrometheusRule`s for high CPU / memory / disk / pod-crash /
+  pod-not-ready / app-5xx are deployed via
+  `gitops/observability/dev/alerting-rules.yaml`.
 
 ## Phase 6: Blue/Green Zero-Downtime Releases (Prod-only)
 
