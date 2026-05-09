@@ -1,0 +1,103 @@
+# ServiceMonitors for Field Fight backend services.
+# Deployed by the field-fight-observability-monitors-dev Argo CD Application.
+# Each monitor scrapes /metrics on the matching pods across all 4 envs.
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: field-fight-auth-service
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: field-fight-auth-service
+    release: field-fight-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - field-fight-dev
+      - field-fight-qa
+      - field-fight-uat
+      - field-fight-prod
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: auth-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: field-fight-leaderboard-api
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: field-fight-leaderboard-api
+    release: field-fight-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - field-fight-dev
+      - field-fight-qa
+      - field-fight-uat
+      - field-fight-prod
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: leaderboard-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: field-fight-match-history-service
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: field-fight-match-history-service
+    release: field-fight-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - field-fight-dev
+      - field-fight-qa
+      - field-fight-uat
+      - field-fight-prod
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: match-history-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: field-fight-game-server
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: field-fight-game-server
+    release: field-fight-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - field-fight-dev
+      - field-fight-qa
+      - field-fight-uat
+      - field-fight-prod
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: game-server
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

@@ -1,0 +1,28 @@
+# Field Fight ServiceMonitors. Plain Kubernetes manifests (no Helm needed).
+# Deployed alongside the kube-prometheus-stack Application — Prometheus will
+# discover these because we set serviceMonitorSelectorNilUsesHelmValues=false
+# in observability-values.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: field-fight-observability-monitors-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Shreyas-Yadav/field-fight.git
+    targetRevision: main
+    path: gitops/observability/dev
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

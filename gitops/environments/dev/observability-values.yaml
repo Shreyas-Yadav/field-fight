@@ -1,0 +1,70 @@
+# Values for the kube-prometheus-stack Helm chart, dev environment.
+# Phase 5a: metrics core (no external HTTPS, no OAuth, no Slack alerts).
+# Phase 5c will add ingress, OAuth, and Alertmanager Slack receiver.
+
+fullnameOverride: field-fight-monitoring
+
+# Disable add-ons that don't work in EKS managed control plane (kubelet
+# doesn't expose these in the same way). Avoids pods stuck in Pending.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+# Allow ServiceMonitors created outside this Helm release to be picked up.
+# We deploy our own ServiceMonitors via a separate ArgoCD Application as
+# raw YAML, and Prometheus needs to discover them.
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    retention: 24h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+    # Ephemeral storage — fine for dev. Production should use a PVC.
+    storageSpec: {}
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    retention: 24h
+    resources:
+      requests:
+        cpu: 20m
+        memory: 50Mi
+
+grafana:
+  enabled: true
+  defaultDashboardsEnabled: true
+  # Phase 5a: ClusterIP only. Phase 5c flips to ALB ingress + OAuth.
+  service:
+    type: ClusterIP
+  adminPassword: changeme-replace-in-5c
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 150Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 50Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 30Mi

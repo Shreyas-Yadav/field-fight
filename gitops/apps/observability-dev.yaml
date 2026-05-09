@@ -1,0 +1,35 @@
+# Observability stack for the dev cluster.
+# Multi-source ArgoCD Application:
+#   source 1: kube-prometheus-stack chart from the upstream Helm repo
+#   source 2: this Git repo (used for the values file)
+# No vendoring of the chart in our repo. ArgoCD pulls it at sync time.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: field-fight-observability-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 65.5.0
+      helm:
+        releaseName: field-fight-monitoring
+        valueFiles:
+          - $values/gitops/environments/dev/observability-values.yaml
+    - repoURL: https://github.com/Shreyas-Yadav/field-fight.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
