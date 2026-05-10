@@ -698,6 +698,26 @@ apply_secret_for_env() {
 
   database_url="postgres://${db_user}:${DB_PASSWORD}@${db_host}:${db_port}/${db_name}"
 
+  # Use per-env GitHub OAuth credentials if stored in SSM under ${SSM_PATH}/${env}/
+  # Falls back to the global credentials loaded at the top of phase_secrets.
+  local github_client_id="$GITHUB_CLIENT_ID"
+  local github_client_secret="$GITHUB_CLIENT_SECRET"
+  if [[ "$env" != "dev" ]]; then
+    local env_gh_id env_gh_secret
+    env_gh_id=$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "${SSM_PATH}/${env}/GITHUB_CLIENT_ID" \
+      --with-decryption \
+      --query "Parameter.Value" --output text 2>/dev/null) && github_client_id="$env_gh_id" \
+      || echo "  [${env}] no per-env GITHUB_CLIENT_ID in SSM — using global"
+    env_gh_secret=$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "${SSM_PATH}/${env}/GITHUB_CLIENT_SECRET" \
+      --with-decryption \
+      --query "Parameter.Value" --output text 2>/dev/null) && github_client_secret="$env_gh_secret" \
+      || echo "  [${env}] no per-env GITHUB_CLIENT_SECRET in SSM — using global"
+  fi
+
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
 
   kubectl create secret generic "$secret_name" \
@@ -707,8 +727,8 @@ apply_secret_for_env() {
     --from-literal=JWT_SECRET="$JWT_SECRET" \
     --from-literal=GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
     --from-literal=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
-    --from-literal=GITHUB_CLIENT_ID="$GITHUB_CLIENT_ID" \
-    --from-literal=GITHUB_CLIENT_SECRET="$GITHUB_CLIENT_SECRET" \
+    --from-literal=GITHUB_CLIENT_ID="$github_client_id" \
+    --from-literal=GITHUB_CLIENT_SECRET="$github_client_secret" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   echo "[${env}] secret applied (host=${db_host})"
