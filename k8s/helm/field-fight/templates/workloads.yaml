@@ -28,6 +28,8 @@ metadata:
   name: {{ $deployName }}
   labels:
     {{- include "field-fight.labels" $root | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
     app.kubernetes.io/component: {{ $serviceName | quote }}
     {{- if $bgEnabled }}
     color: {{ $color | quote }}

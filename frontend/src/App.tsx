@@ -30,8 +30,9 @@ export default function App() {
   const [gameMode,     setGameMode]     = useState<GameMode>('human-vs-human');
   const [gameStarted,  setGameStarted]  = useState(false);
   const [winSize,      setWinSize]      = useState({ w: window.innerWidth, h: window.innerHeight });
-  const gameStartedRef = useRef(false);
-  const myTurnPending  = useRef(false);
+  const gameStartedRef  = useRef(false);
+  const gameStartTimeRef = useRef<number | null>(null);
+  const myTurnPending   = useRef(false);
 
   // ── Remote state ──────────────────────────────────────────────────────────
   const [socket,           setSocket]           = useState<Socket | null>(null);
@@ -126,10 +127,14 @@ export default function App() {
     const p0Id   = localPlayerIdx === 0 ? (user?.id ?? null) : null;
     const p1Id   = localPlayerIdx === 1 ? (user?.id ?? null) : null;
 
+    const durationSeconds = gameStartTimeRef.current
+      ? Math.round((Date.now() - gameStartTimeRef.current) / 1000)
+      : 0;
+
     fetch('/matches', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p0Id, p0Name, p1Id, p1Name, winner, gameMode, p0Moves, p1Moves }),
+      body: JSON.stringify({ p0Id, p0Name, p1Id, p1Name, winner, gameMode, p0Moves, p1Moves, durationSeconds }),
     }).catch(() => {});
   }, [phase, winner]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -169,6 +174,7 @@ export default function App() {
     const onGameStart = ({ playerIndex: pi }: { playerIndex: 0 | 1 }) => {
       setPlayerIndex(pi);
       gameStartedRef.current = true;
+      gameStartTimeRef.current = Date.now();
       setGameStarted(true);
       setRemoteStep(null);
       setRemoteError('');
@@ -567,12 +573,12 @@ export default function App() {
                 <LobbyCard
                   title="LOCAL DUEL" desc="TWO UNITS · ONE ARENA · SAME TERMINAL"
                   color="var(--player-0)" delay={0}
-                  onClick={() => { setGameMode('human-vs-human'); gameStartedRef.current = true; setGameStarted(true); }}
+                  onClick={() => { setGameMode('human-vs-human'); gameStartedRef.current = true; gameStartTimeRef.current = Date.now(); setGameStarted(true); }}
                 />
                 <LobbyCard
                   title="VS AI UNIT" desc="ENGAGE NEURAL ADVERSARY SYSTEM"
                   color="var(--player-1)" delay={0.07}
-                  onClick={() => { setGameMode('human-vs-bot'); gameStartedRef.current = true; setGameStarted(true); }}
+                  onClick={() => { setGameMode('human-vs-bot'); gameStartedRef.current = true; gameStartTimeRef.current = Date.now(); setGameStarted(true); }}
                 />
                 <LobbyCard
                   title="REMOTE OPS" desc="LINK WITH REMOTE COMMANDER VIA CHANNEL"

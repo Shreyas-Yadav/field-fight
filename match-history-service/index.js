@@ -73,7 +73,8 @@ app.get('/matches', async (req, res, next) => {
               game_mode AS "gameMode",
               p0_moves AS "p0Moves",
               p1_moves AS "p1Moves",
-              created_at AS "createdAt"
+              created_at AS "createdAt",
+              duration_seconds AS "durationSeconds"
        FROM matches
        ORDER BY created_at DESC, id DESC
        LIMIT $1`,
@@ -100,7 +101,8 @@ app.get('/matches/player/:playerId', async (req, res, next) => {
               game_mode AS "gameMode",
               p0_moves AS "p0Moves",
               p1_moves AS "p1Moves",
-              created_at AS "createdAt"
+              created_at AS "createdAt",
+              duration_seconds AS "durationSeconds"
        FROM matches
        WHERE p0_id = $1 OR p1_id = $1
        ORDER BY created_at DESC, id DESC
@@ -117,7 +119,7 @@ app.get('/matches/player/:playerId', async (req, res, next) => {
 app.post('/matches', async (req, res, next) => {
   const end = matchHistoryRequestDuration.startTimer({ method: 'POST', route: '/matches' });
   try {
-    const { p0Id, p0Name, p1Id, p1Name, winner, gameMode, p0Moves, p1Moves } = req.body;
+    const { p0Id, p0Name, p1Id, p1Name, winner, gameMode, p0Moves, p1Moves, durationSeconds } = req.body;
 
     if (typeof winner !== 'number' || typeof gameMode !== 'string') {
       end({ status_code: 400 });
@@ -125,8 +127,8 @@ app.post('/matches', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO matches (p0_id, p0_name, p1_id, p1_name, winner, game_mode, p0_moves, p1_moves)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO matches (p0_id, p0_name, p1_id, p1_name, winner, game_mode, p0_moves, p1_moves, duration_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         p0Id ?? null,
@@ -137,6 +139,7 @@ app.post('/matches', async (req, res, next) => {
         gameMode,
         p0Moves ?? 0,
         p1Moves ?? 0,
+        durationSeconds ?? 0,
       ],
     );
     matchHistoryMatchesPostedTotal.inc();
