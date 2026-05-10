@@ -190,9 +190,8 @@ variable "argocd_chart_version" {
 }
 
 variable "gitops_repo_url" {
-  description = "Git repository URL that Argo CD should watch."
+  description = "Git repository URL that Argo CD should watch. Set in project.auto.tfvars."
   type        = string
-  default     = "https://github.com/Shreyas-Yadav/field-fight.git"
 }
 
 variable "gitops_target_revision" {
@@ -202,21 +201,18 @@ variable "gitops_target_revision" {
 }
 
 variable "domain_name" {
-  description = "Base DNS domain for the dev app."
+  description = "Base DNS domain for the dev app. Set in project.auto.tfvars."
   type        = string
-  default     = "shri.software"
 }
 
 variable "frontend_hostname" {
-  description = "Public hostname for the dev frontend."
+  description = "Public hostname for the dev frontend. Set in project.auto.tfvars."
   type        = string
-  default     = "field-fight-dev.shri.software"
 }
 
 variable "grafana_hostname" {
-  description = "Public hostname for the dev Grafana instance."
+  description = "Public hostname for the dev Grafana instance. Set in project.auto.tfvars."
   type        = string
-  default     = "grafana-dev.shri.software"
 }
 
 variable "create_route53_zone" {

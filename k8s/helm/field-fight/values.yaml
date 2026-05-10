@@ -47,7 +47,7 @@ urls:
 config:
   nodeEnv: production
   port: "3000"
-  corsOrigin: "*"
+  corsOrigin: ""
 
 auth:
   jwtSecret: ""

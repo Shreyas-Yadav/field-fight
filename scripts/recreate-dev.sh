@@ -137,24 +137,27 @@ update_additional_env_values() {
   # env_name -> cert ARN) and patch each env's values.yaml to:
   #   - ingress.enabled: true
   #   - ingress.certificateArn: <arn>
+  #   - registry.accountId: <current AWS account ID>
   # Skips envs whose values.yaml already has the correct ARN (idempotent).
 
-  local arns_json
+  local arns_json account_id
   arns_json="$(terraform -chdir="$DEV_DIR" output -json additional_certificate_arns 2>/dev/null || echo '{}')"
+  account_id="$(aws sts get-caller-identity --query Account --output text)"
 
   if [[ "$arns_json" == "{}" || -z "$arns_json" ]]; then
     echo "No additional certificates found in terraform output (additional_environments empty?)"
     return 0
   fi
 
-  echo "Updating qa/uat/prod values.yaml with cert ARNs..."
+  echo "Updating qa/uat/prod values.yaml with cert ARNs and account ID..."
 
-  python3 - "$ROOT" "$arns_json" <<'PY'
+  python3 - "$ROOT" "$arns_json" "$account_id" <<'PY'
 import json, re, sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
 arns = json.loads(sys.argv[2])
+account_id = sys.argv[3]
 
 for env, arn in arns.items():
     values_file = root / f"gitops/environments/{env}/values.yaml"
@@ -163,6 +166,14 @@ for env, arn in arns.items():
         continue
     text = values_file.read_text()
 
+    # Update registry.accountId
+    text, count_account = re.subn(
+        r'^(  accountId:\s*).*$',
+        r'\1"' + account_id + '"',
+        text,
+        count=1,
+        flags=re.M,
+    )
     # Update ingress.enabled to true
     text, count_enabled = re.subn(
         r'(\bingress:\s*\n(?:  .*\n)*?  enabled:\s*).*',
@@ -183,7 +194,7 @@ for env, arn in arns.items():
         sys.exit(1)
 
     values_file.write_text(text)
-    print(f"  [{env}] enabled ingress with cert {arn[-20:]}")
+    print(f"  [{env}] accountId={account_id}, cert={arn[-20:]}")
 PY
 }
 

@@ -44,6 +44,8 @@ Thumbs.db
 *.tfvars.json
 # Multi-env hostname config has no secrets, commit it
 !terraform/environments/dev/multi-env.auto.tfvars
+# Project-specific config (domain, repo URL) — not secrets, commit it
+!terraform/environments/dev/project.auto.tfvars
 # Packer AMI ID is the GitOps promotion artifact — must be tracked
 !terraform/environments/dev/packer.auto.tfvars
 *.tfplan

@@ -67,7 +67,7 @@ urls:
 config:
   nodeEnv: production
   port: "3000"
-  corsOrigin: "*"
+  corsOrigin: "https://field-fight.shri.software"
 
 auth:
   jwtSecret: ""

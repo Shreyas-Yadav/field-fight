@@ -20,7 +20,7 @@ urls:
 config:
   nodeEnv: production
   port: "3000"
-  corsOrigin: "*"
+  corsOrigin: "https://field-fight-qa.shri.software"
 
 auth:
   jwtSecret: ""
