@@ -7,6 +7,7 @@ DEV_DIR="$ROOT/terraform/environments/dev"
 ECR_DIR="$ROOT/terraform/ecr"
 VALUES_FILE="$ROOT/gitops/environments/dev/values.yaml"
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$ROOT/secrets.env}"
+SSM_PATH="${SSM_PATH:-/field-fight}"
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 LAB_ROLE_NAME="${LAB_ROLE_NAME:-LabRole}"
@@ -32,14 +33,15 @@ Usage:
   scripts/recreate-dev.sh patch
 
 Environment:
-  TF_VAR_db_password    required
+  TF_VAR_db_password    required (auto-loaded from SSM if not set)
   AWS_REGION            default: us-east-1
   LAB_ROLE_NAME         default: LabRole
   EKS_NODE_TYPE         default: t3.medium
   EKS_NODE_DESIRED_SIZE default: 4
   EKS_NODE_MAX_SIZE     default: 5
   AUTO_APPROVE          default: false
-  SECRETS_ENV_FILE      default: <repo-root>/secrets.env
+  SSM_PATH              default: /field-fight (AWS SSM Parameter Store path prefix)
+  SECRETS_ENV_FILE      default: <repo-root>/secrets.env (fallback if SSM unavailable)
 
 Notes:
   - "up" recreates ECR and dev core infra including RDS and EKS,
@@ -242,7 +244,11 @@ wait_for_ingress_hostname() {
 
 ensure_env() {
   if [[ -z "${TF_VAR_db_password:-}" ]]; then
-    echo "TF_VAR_db_password is required" >&2
+    # Auto-load from SSM if not already set
+    load_secrets_from_ssm || load_secrets_from_file
+  fi
+  if [[ -z "${TF_VAR_db_password:-}" ]]; then
+    echo "TF_VAR_db_password is required — store DB_PASSWORD in SSM under ${SSM_PATH}/DB_PASSWORD" >&2
     exit 1
   fi
 }
@@ -799,21 +805,52 @@ apply_observability_secrets() {
   kubectl -n observability rollout restart deployment/field-fight-monitoring-grafana 2>/dev/null || true
 }
 
-phase_secrets() {
-  need_cmd kubectl
-  need_cmd python3
+load_secrets_from_ssm() {
+  echo "Loading secrets from AWS SSM Parameter Store (${SSM_PATH})..."
+  local params
+  params=$(aws ssm get-parameters-by-path \
+    --region "$AWS_REGION" \
+    --path "$SSM_PATH" \
+    --with-decryption \
+    --query "Parameters[*].{Name:Name,Value:Value}" \
+    --output json 2>/dev/null) || {
+    echo "  [warn] Could not reach SSM — falling back to ${SECRETS_ENV_FILE}" >&2
+    return 1
+  }
 
+  # Export each parameter as an env var using the leaf name (e.g. /field-fight/DB_PASSWORD → DB_PASSWORD)
+  while IFS= read -r line; do
+    local key value
+    key=$(echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['Name'].split('/')[-1])")
+    value=$(echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['Value'])")
+    export "$key"="$value"
+  done < <(echo "$params" | python3 -c "import sys,json; [print(json.dumps(p)) for p in json.load(sys.stdin)]")
+
+  # TF_VAR_db_password must match DB_PASSWORD for terraform apply
+  export TF_VAR_db_password="${DB_PASSWORD}"
+  echo "  Loaded $(echo "$params" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))") parameters from SSM"
+}
+
+load_secrets_from_file() {
   if [[ ! -f "$SECRETS_ENV_FILE" ]]; then
     echo "secrets env file not found: $SECRETS_ENV_FILE" >&2
-    echo "Copy secrets.env.example to secrets.env and fill in real values." >&2
+    echo "Either store secrets in SSM (${SSM_PATH}/*) or copy secrets.env.example to secrets.env." >&2
     exit 1
   fi
-
-  # Source the env file. Only reads KEY=VALUE lines.
+  echo "Loading secrets from ${SECRETS_ENV_FILE}..."
   set -a
   # shellcheck disable=SC1090
   . "$SECRETS_ENV_FILE"
   set +a
+  export TF_VAR_db_password="${DB_PASSWORD}"
+}
+
+phase_secrets() {
+  need_cmd kubectl
+  need_cmd python3
+
+  # Try SSM first, fall back to secrets.env
+  load_secrets_from_ssm || load_secrets_from_file
 
   local missing=()
   for var in DB_PASSWORD JWT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET; do
@@ -822,7 +859,8 @@ phase_secrets() {
     fi
   done
   if (( ${#missing[@]} > 0 )); then
-    echo "missing required keys in $SECRETS_ENV_FILE: ${missing[*]}" >&2
+    echo "missing required secrets: ${missing[*]}" >&2
+    echo "Store them in SSM under ${SSM_PATH}/<NAME> or add to ${SECRETS_ENV_FILE}" >&2
     exit 1
   fi
 
