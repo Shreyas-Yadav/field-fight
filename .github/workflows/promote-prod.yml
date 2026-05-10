@@ -51,10 +51,20 @@ jobs:
           PROMOTE_TAG: ${{ steps.resolve.outputs.tag }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # Update global imageTag (used by the migration job)
           sed -i "s/^imageTag: .*/imageTag: ${PROMOTE_TAG}/" gitops/environments/prod/values.yaml
+
+          # Determine the standby color and update its image tag.
+          # The active color keeps serving traffic — only the standby gets the new image.
+          # A human still flips activeColor after verifying the standby is healthy.
+          active_color="$(awk '/^blueGreen:/{f=1} f && /activeColor:/{print $2; exit}' gitops/environments/prod/values.yaml)"
+          standby_color="$( [[ "$active_color" == "blue" ]] && echo green || echo blue )"
+          echo "Active: ${active_color} — updating standby (${standby_color}) to ${PROMOTE_TAG}"
+          sed -i "s/^\(\s*${standby_color}:\s*\).*/\1${PROMOTE_TAG}/" gitops/environments/prod/values.yaml
+
           short_sha="${PROMOTE_TAG::7}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add gitops/environments/prod/values.yaml
-          git commit -m "chore(gitops): promote prod to ${short_sha} (release ${RELEASE_TAG}) [skip ci]"
+          git commit -m "chore(gitops): promote prod ${standby_color} to ${short_sha} (release ${RELEASE_TAG}) [skip ci]"
           git push
