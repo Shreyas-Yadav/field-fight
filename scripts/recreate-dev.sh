@@ -66,6 +66,10 @@ Notes:
     trigger a rolling node replacement (one node at a time, respecting PDBs).
     Requires packer in PATH. For automated patching use the packer-build
     GitHub Actions workflow instead.
+    --skip-packer   Reuse the AMI already in packer.auto.tfvars (skip the
+                    ~12 min Packer build). Useful when retrying after a
+                    failed node drain: drain the stuck node manually, then
+                    run "patch --skip-packer" to finish the rollout.
 EOF
 }
 
@@ -877,39 +881,94 @@ phase_secrets() {
   echo "============================================================"
 }
 
+print_kernel_table() {
+  local label="$1"
+  local data
+  data=$(kubectl get nodes \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kernelVersion}{"\n"}{end}' \
+    2>/dev/null || true)
+  if [[ -z "$data" ]]; then
+    echo "  [${label}] kernel info unavailable"
+    return
+  fi
+  echo "  ${label}:"
+  while IFS=$'\t' read -r name kernel; do
+    printf "    %-40s  %s\n" "$(echo "$name" | cut -d. -f1)" "$kernel"
+  done <<< "$data"
+}
+
 phase_patch() {
   # Day 2 demo: build a patched golden AMI with Packer, record it in Git,
   # and roll nodes one-at-a-time via terraform apply.
-  need_cmd packer
+  #
+  # Flags:
+  #   --skip-packer   Reuse the AMI already in packer.auto.tfvars instead of
+  #                   building a new one. Useful when retrying after a failed
+  #                   node drain without waiting another ~12 min for Packer.
+  local skip_packer=false
+  for arg in "$@"; do
+    [[ "$arg" == "--skip-packer" ]] && skip_packer=true
+  done
+
   need_cmd terraform
+  need_cmd kubectl
+  [[ "$skip_packer" == "false" ]] && need_cmd packer
   ensure_env
 
-  echo "Building patched EKS AMI with Packer..."
-  cd "$ROOT"
-  packer init packer/eks-node.pkr.hcl
+  echo "============================================================"
+  echo "  Kernel versions BEFORE patching:"
+  echo "============================================================"
+  print_kernel_table "BEFORE"
+  echo
 
   local ami_id
-  ami_id=$(packer build -machine-readable packer/eks-node.pkr.hcl \
-    | grep 'artifact,0,id' | tail -1 | cut -d: -f2)
+  if [[ "$skip_packer" == "true" ]]; then
+    ami_id=$(awk -F'"' '/eks_node_ami_id/ {print $2}' "$DEV_DIR/packer.auto.tfvars")
+    if [[ -z "$ami_id" ]]; then
+      echo "No AMI ID found in packer.auto.tfvars. Run without --skip-packer first." >&2
+      exit 1
+    fi
+    echo "Reusing existing AMI: $ami_id (skipping Packer build)"
+  else
+    echo "Building patched EKS AMI with Packer..."
+    cd "$ROOT"
+    packer init packer/eks-node.pkr.hcl
 
-  if [[ -z "$ami_id" ]]; then
-    echo "Packer build did not produce an AMI ID. Check the output above." >&2
-    exit 1
-  fi
+    ami_id=$(packer build -machine-readable packer/eks-node.pkr.hcl \
+      | grep 'artifact,0,id' | tail -1 | cut -d: -f2)
 
-  echo "New AMI: $ami_id"
-  echo "Writing to terraform/environments/dev/packer.auto.tfvars..."
+    if [[ -z "$ami_id" ]]; then
+      echo "Packer build did not produce an AMI ID. Check the output above." >&2
+      exit 1
+    fi
 
-  cat > "$DEV_DIR/packer.auto.tfvars" <<EOF
+    echo "New AMI: $ami_id"
+    echo "Writing to terraform/environments/dev/packer.auto.tfvars..."
+
+    cat > "$DEV_DIR/packer.auto.tfvars" <<EOF
 # Managed by the packer-build GitHub Actions workflow.
 # Empty = Terraform resolves the latest EKS-optimized AMI from AWS SSM.
 # Set to a Packer-built AMI ID to pin nodes to a patched golden image.
 eks_node_ami_id = "$ami_id"
 EOF
+  fi
 
   local account_id role_arn
   account_id="$(aws sts get-caller-identity --query Account --output text)"
   role_arn="arn:aws:iam::${account_id}:role/${LAB_ROLE_NAME}"
+
+  # Look up the existing ALB DNS so Terraform keeps the Route53 aliases intact.
+  # Without these vars the plan would destroy all DNS records and break the app.
+  local alb_dns alb_zone
+  alb_dns=$(kubectl -n "$INGRESS_NAMESPACE" get ingress "$INGRESS_NAME" \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  if [[ -n "$alb_dns" ]]; then
+    alb_zone=$(aws elbv2 describe-load-balancers \
+      --region "$AWS_REGION" \
+      --query "LoadBalancers[?DNSName=='${alb_dns}'].CanonicalHostedZoneId | [0]" \
+      --output text 2>/dev/null || true)
+    [[ "$alb_zone" == "None" ]] && alb_zone=""
+  fi
 
   init_dev_backend
   apply_tf "$DEV_DIR" \
@@ -923,6 +982,10 @@ EOF
     -var="validate_frontend_certificate=true" \
     -var="validate_grafana_certificate=true" \
     -var="validate_additional_certificates=true" \
+    -var="frontend_alb_dns_name=${alb_dns}" \
+    -var="frontend_alb_zone_id=${alb_zone}" \
+    -var="grafana_alb_dns_name=${alb_dns}" \
+    -var="grafana_alb_zone_id=${alb_zone}" \
     -var="eks_cluster_role_arn=${role_arn}" \
     -var="eks_node_role_arn=${role_arn}" \
     -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
@@ -931,12 +994,15 @@ EOF
 
   echo
   echo "============================================================"
-  echo "  PHASE 'patch' — nodes rolling to patched AMI"
+  echo "  Kernel versions AFTER patching:"
+  echo "============================================================"
+  print_kernel_table "AFTER"
+
+  echo
+  echo "============================================================"
+  echo "  PHASE 'patch' COMPLETE"
   echo "============================================================"
   echo "  New AMI: $ami_id"
-  echo
-  echo "  Watch rolling replacement:"
-  echo "       kubectl get nodes -w"
   echo
   echo "  Verify zero dropped requests:"
   echo "       bash scripts/dev-status.sh"
@@ -976,7 +1042,8 @@ main() {
       phase_start
       ;;
     patch)
-      phase_patch
+      shift
+      phase_patch "$@"
       ;;
     -h|--help|help|"")
       usage

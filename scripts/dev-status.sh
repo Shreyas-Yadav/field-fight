@@ -73,8 +73,22 @@ else
     warn "Nodes: ${READY_NODES}/${TOTAL_NODES} Ready"
   fi
 
-  # AMI per node — useful for Day 2a patching demo (BEFORE/AFTER comparison)
-  section "Node AMI (Day 2a Patching)"
+  # Kernel version + AMI — Day 2a patching demo BEFORE/AFTER comparison.
+  # Kernel comes from the Kubernetes node object (no AWS CLI needed).
+  # AMI ID comes from AWS CLI (gracefully skipped if creds lack EC2:DescribeInstances).
+  section "Node Kernel & AMI (Day 2a Patching)"
+  KERNEL_INFO=$(kubectl get nodes \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kernelVersion}{"\n"}{end}' \
+    2>/dev/null || true)
+  if [[ -z "$KERNEL_INFO" ]]; then
+    warn "Kernel versions: not available (no nodes or kubectl error)"
+  else
+    while IFS=$'\t' read -r name kernel; do
+      short=$(echo "$name" | cut -d. -f1)
+      ok "${short}  kernel: ${kernel}"
+    done <<< "$KERNEL_INFO"
+  fi
+
   AMI_INFO=$(aws_query ec2 describe-instances \
     --region "$REGION" \
     --filters \
@@ -84,11 +98,10 @@ else
     --output text)
   if [[ "$AMI_INFO" == "ACCESS_DENIED" || "$AMI_INFO" == "NOT_FOUND" || -z "$AMI_INFO" ]]; then
     warn "AMI IDs: not accessible via AWS CLI (credentials may lack EC2:DescribeInstances)"
-    warn "Fallback: kubectl get nodes -o wide  (shows OS image string, not AMI ID)"
   else
     while IFS=$'\t' read -r hostname ami_id; do
       short_host=$(echo "$hostname" | cut -d. -f1)
-      ok "${short_host}: ${ami_id}"
+      ok "${short_host}  ami:    ${ami_id}"
     done <<< "$AMI_INFO"
   fi
 fi

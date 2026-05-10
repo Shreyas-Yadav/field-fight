@@ -1,4 +1,17 @@
-#!/bin/bash
-# When a launch template supplies a custom AMI, EKS no longer injects
-# bootstrap user data automatically. This script must call it explicitly.
-/etc/eks/bootstrap.sh ${cluster_name}
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: application/node.eks.aws
+
+---
+apiVersion: node.eks.aws/v1alpha1
+kind: NodeConfig
+spec:
+  cluster:
+    name: ${cluster_name}
+    apiServerEndpoint: ${cluster_endpoint}
+    certificateAuthority: ${cluster_ca}
+    cidr: ${service_cidr}
+
+--BOUNDARY--

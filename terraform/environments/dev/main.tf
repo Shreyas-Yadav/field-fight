@@ -7,7 +7,7 @@ data "aws_availability_zones" "available" {
 # default path up-to-date without hardcoding an AMI ID in source control.
 data "aws_ssm_parameter" "eks_ami" {
   count = var.create_eks ? 1 : 0
-  name  = "/aws/service/eks/optimized-ami/${var.eks_cluster_version}/amazon-linux-2/recommended/image_id"
+  name  = "/aws/service/eks/optimized-ami/${var.eks_cluster_version}/amazon-linux-2023/x86_64/standard/recommended/image_id"
 }
 
 locals {
@@ -137,25 +137,26 @@ resource "aws_eks_cluster" "this" {
 }
 
 # Launch template pins the AMI so node OS patching is explicit and Git-tracked.
-# create_before_destroy ensures a new template version exists before EKS
-# starts the rolling node replacement, avoiding a window with no valid template.
+# Fixed name (not name_prefix) keeps the template ID stable across applies so
+# AMI updates increment the version only — EKS rolls nodes one-at-a-time (~)
+# rather than destroying and recreating the node group (-/+).
 resource "aws_launch_template" "eks_node" {
-  count       = var.create_eks ? 1 : 0
-  name_prefix = "${local.name}-node-"
-  image_id    = local.eks_node_ami_id
+  count    = var.create_eks ? 1 : 0
+  name     = "${local.name}-node"
+  image_id = local.eks_node_ami_id
 
-  # Custom AMIs require an explicit bootstrap call; EKS no longer injects it.
+  # AL2023 nodes bootstrap via nodeadm (not bootstrap.sh). The MIME multipart
+  # user data passes the four values nodeadm needs to join the cluster.
   user_data = base64encode(templatefile("${path.module}/templates/eks-userdata.sh.tpl", {
-    cluster_name = aws_eks_cluster.this[0].name
+    cluster_name     = aws_eks_cluster.this[0].name
+    cluster_endpoint = aws_eks_cluster.this[0].endpoint
+    cluster_ca       = aws_eks_cluster.this[0].certificate_authority[0].data
+    service_cidr     = aws_eks_cluster.this[0].kubernetes_network_config[0].service_ipv4_cidr
   }))
 
   tag_specifications {
     resource_type = "instance"
     tags          = merge(local.common_tags, { Name = "${local.name}-node" })
-  }
-
-  lifecycle {
-    create_before_destroy = true
   }
 }
 

@@ -17,12 +17,12 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-# Resolve the latest EKS-optimized Amazon Linux 2 AMI for the given k8s version.
-# Using the official AWS owner ensures the bootstrap script is pre-installed.
+# AL2023 EKS-optimized AMI — the default OS for EKS 1.29+ clusters.
+# Naming differs from AL2: uses "al2023-x86_64-standard" infix.
 data "amazon-ami" "eks_base" {
   region = var.aws_region
   filters = {
-    name                = "amazon-eks-node-${var.eks_version}-*"
+    name                = "amazon-eks-node-al2023-x86_64-standard-${var.eks_version}-*"
     root-device-type    = "ebs"
     virtualization-type = "hvm"
     architecture        = "x86_64"
@@ -38,7 +38,7 @@ source "amazon-ebs" "eks_node" {
   ssh_username  = "ec2-user"
 
   # Timestamp in the name guarantees immutability — every build is a distinct artifact.
-  ami_name = "field-fight-eks-node-${var.eks_version}-{{timestamp}}"
+  ami_name = "field-fight-eks-node-al2023-${var.eks_version}-{{timestamp}}"
 
   tags = {
     Name       = "field-fight-eks-node"
@@ -52,10 +52,13 @@ build {
 
   provisioner "shell" {
     inline = [
-      # Full OS update first, then security-only pass to catch any CVEs
-      # that the initial update may have missed in ordering.
-      "sudo yum update -y",
-      "sudo yum upgrade -y --security",
+      # AL2023 uses dnf, not yum. Full update first, then a security-only
+      # pass to ensure CVEs released between the two runs are applied.
+      "sudo dnf update -y",
+      "sudo dnf upgrade -y --security",
+      # Bake in htop for node observability — demonstrates golden AMI
+      # carries custom tooling beyond security patches.
+      "sudo dnf install -y htop",
     ]
   }
 }
