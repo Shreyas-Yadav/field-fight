@@ -18,6 +18,7 @@ import { Controls }         from './components/Controls';
 import { SimCanvas }        from './components/SimCanvas';
 import { PlayerPanel }      from './components/PlayerPanel';
 import { LoginScreen }      from './components/LoginScreen';
+import { MatchHistory }     from './components/MatchHistory';
 
 type RemoteStep = 'menu' | 'creating' | 'joining' | null;
 
@@ -45,6 +46,9 @@ export default function App() {
 
   // ── Leaderboard ───────────────────────────────────────────────────────────
   const [scores, setScores] = useState<ScoreRow[]>([]);
+
+  // ── Match history overlay ─────────────────────────────────────────────────
+  const [showHistory, setShowHistory] = useState(false);
 
   // ── Sliders ───────────────────────────────────────────────────────────────
   const [strength,    setStrength]    = useState(DEFAULT_STRENGTH);
@@ -432,6 +436,7 @@ export default function App() {
               <WinOverlay
                 winner={winner} gameMode={gameMode} playerIndex={playerIndex}
                 scores={scores} onPlayAgain={handleReset}
+                onViewHistory={() => setShowHistory(true)}
               />
             )}
 
@@ -478,6 +483,11 @@ export default function App() {
         )}
       </div>
 
+      {/* ── Match history overlay ─────────────────────────────────────── */}
+      {showHistory && (
+        <MatchHistory userId={user?.id} onClose={() => setShowHistory(false)} />
+      )}
+
       {/* ── Lobby full-screen overlay ──────────────────────────────────── */}
       {!gameStarted && (
         <div style={{
@@ -497,6 +507,8 @@ export default function App() {
             position: 'absolute', top: 16, right: 20, zIndex: 10,
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
+            {/* Environment badge */}
+            <EnvBadge />
             {user && (
               <>
                 {user.avatar && (
@@ -511,6 +523,19 @@ export default function App() {
                 }}>
                   {user.name.toUpperCase()}
                 </span>
+                <button
+                  onClick={() => setShowHistory(true)}
+                  style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.12em',
+                    padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
+                    background: 'transparent', border: '1px solid rgba(200,169,110,.2)',
+                    color: 'var(--text-dim)', transition: 'all .2s',
+                  }}
+                  onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.color = 'var(--gold)'; b.style.borderColor = 'rgba(200,169,110,.5)'; }}
+                  onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.color = 'var(--text-dim)'; b.style.borderColor = 'rgba(200,169,110,.2)'; }}
+                >
+                  INTEL
+                </button>
                 <button
                   onClick={logout}
                   style={{
@@ -680,10 +705,10 @@ export default function App() {
 
 // ── WinOverlay ────────────────────────────────────────────────────────────────
 function WinOverlay({
-  winner, gameMode, playerIndex, scores, onPlayAgain,
+  winner, gameMode, playerIndex, scores, onPlayAgain, onViewHistory,
 }: {
   winner: 0 | 1; gameMode: GameMode; playerIndex: 0 | 1 | null;
-  scores: ScoreRow[]; onPlayAgain: () => void;
+  scores: ScoreRow[]; onPlayAgain: () => void; onViewHistory: () => void;
 }) {
   const c   = PLAYER_COLORS[winner];
   const uid = PLAYER_UIDS[winner];
@@ -773,27 +798,34 @@ function WinOverlay({
           </div>
         )}
 
-        <button
-          onClick={onPlayAgain}
-          style={{
-            fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.3em',
-            padding: '13px 44px', borderRadius: 2, cursor: 'pointer', transition: 'all .3s',
-            background: 'rgba(200,169,110,.1)', border: '1px solid rgba(200,169,110,.5)',
-            color: 'var(--gold)', boxShadow: '0 0 24px rgba(200,169,110,.18)',
-          }}
-          onMouseEnter={e => {
-            const b = e.currentTarget as HTMLButtonElement;
-            b.style.background = 'rgba(200,169,110,.18)';
-            b.style.boxShadow  = '0 0 36px rgba(200,169,110,.35)';
-          }}
-          onMouseLeave={e => {
-            const b = e.currentTarget as HTMLButtonElement;
-            b.style.background = 'rgba(200,169,110,.1)';
-            b.style.boxShadow  = '0 0 24px rgba(200,169,110,.18)';
-          }}
-        >
-          ↺ NEW MISSION
-        </button>
+        <div style={{ display: 'flex', gap: 10, width: '100%', justifyContent: 'center' }}>
+          <button
+            onClick={onPlayAgain}
+            style={{
+              fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.3em',
+              padding: '13px 32px', borderRadius: 2, cursor: 'pointer', transition: 'all .3s',
+              background: 'rgba(200,169,110,.1)', border: '1px solid rgba(200,169,110,.5)',
+              color: 'var(--gold)', boxShadow: '0 0 24px rgba(200,169,110,.18)',
+            }}
+            onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.background = 'rgba(200,169,110,.18)'; b.style.boxShadow = '0 0 36px rgba(200,169,110,.35)'; }}
+            onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.background = 'rgba(200,169,110,.1)'; b.style.boxShadow = '0 0 24px rgba(200,169,110,.18)'; }}
+          >
+            ↺ NEW MISSION
+          </button>
+          <button
+            onClick={onViewHistory}
+            style={{
+              fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.3em',
+              padding: '13px 32px', borderRadius: 2, cursor: 'pointer', transition: 'all .3s',
+              background: 'transparent', border: '1px solid rgba(200,169,110,.25)',
+              color: 'var(--text-dim)',
+            }}
+            onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.color = 'var(--gold)'; b.style.borderColor = 'rgba(200,169,110,.5)'; }}
+            onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.color = 'var(--text-dim)'; b.style.borderColor = 'rgba(200,169,110,.25)'; }}
+          >
+            ◈ VIEW INTEL
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -846,6 +878,28 @@ function LobbyCard({
       </div>
       <span style={{ marginLeft: 'auto', color: color + '77', fontSize: 18 }}>›</span>
     </button>
+  );
+}
+
+// ── EnvBadge ──────────────────────────────────────────────────────────────────
+function EnvBadge() {
+  const host = window.location.hostname;
+  let env = 'DEV';
+  let color = '#00d4ff';
+  if (host.includes('-qa.'))   { env = 'QA';   color = '#a78bfa'; }
+  if (host.includes('-uat.'))  { env = 'UAT';  color = '#fb923c'; }
+  if (host === 'field-fight.shri.software') { env = 'PROD'; color = '#4ade80'; }
+  if (host === 'localhost')    { env = 'LOCAL'; color = 'rgba(200,169,110,.6)'; }
+
+  return (
+    <div style={{
+      fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.28em',
+      padding: '3px 10px', borderRadius: 2,
+      border: `1px solid ${color}55`,
+      color, background: `${color}12`,
+    }}>
+      {env}
+    </div>
   );
 }
 

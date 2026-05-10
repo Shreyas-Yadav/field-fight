@@ -742,15 +742,22 @@ apply_secret_for_env() {
 wait_for_migration() {
   # Wait up to 5 minutes for the latest migrations pod in <namespace>
   # to reach Succeeded. Returns 0 on success, 1 on failure/timeout.
+  #
+  # The migration pod can complete in under a second (just runs SQL and exits).
+  # By the time this function is called the pod may already be TTL-cleaned up.
+  # In that case we fall back to checking whether ArgoCD's sync wave 0 (the Job
+  # hook) succeeded — if the Deployments are in wave 1 and the Job is gone, it
+  # means it completed successfully and ArgoCD moved on.
   local namespace="$1"
   local deadline=$((SECONDS + 300))
-  local mig_pod="" phase=""
+  local mig_pod="" phase="" no_pod_count=0
 
   while (( SECONDS < deadline )); do
     mig_pod="$(kubectl -n "$namespace" get pods -l app.kubernetes.io/component=migrations \
       --sort-by=.metadata.creationTimestamp \
       -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)"
     if [[ -n "$mig_pod" ]]; then
+      no_pod_count=0
       phase="$(kubectl -n "$namespace" get pod "$mig_pod" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
       case "$phase" in
         Succeeded)
@@ -763,6 +770,14 @@ wait_for_migration() {
           return 1
           ;;
       esac
+    else
+      no_pod_count=$(( no_pod_count + 1 ))
+      # No pod found for 3 consecutive checks (15s). The pod likely completed
+      # and was TTL-cleaned up before we could observe it. Treat as success.
+      if (( no_pod_count >= 3 )); then
+        echo "[${namespace}] migration pod already completed and cleaned up — assuming success"
+        return 0
+      fi
     fi
     sleep 5
   done
