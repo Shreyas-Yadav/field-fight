@@ -2,9 +2,22 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# When eks_node_ami_id is empty, resolve the latest EKS-optimized AMI for the
+# configured k8s version from the AWS-managed SSM parameter. This keeps the
+# default path up-to-date without hardcoding an AMI ID in source control.
+data "aws_ssm_parameter" "eks_ami" {
+  count = var.create_eks ? 1 : 0
+  name  = "/aws/service/eks/optimized-ami/${var.eks_cluster_version}/amazon-linux-2/recommended/image_id"
+}
+
 locals {
   name = "${var.project_name}-${var.environment}"
   azs  = slice(data.aws_availability_zones.available.names, 0, var.az_count)
+
+  # Prefer the Packer-built AMI when provided; fall back to the SSM-resolved default.
+  eks_node_ami_id = var.eks_node_ami_id != "" ? var.eks_node_ami_id : (
+    var.create_eks ? data.aws_ssm_parameter.eks_ami[0].value : ""
+  )
 
   common_tags = merge(
     {
@@ -123,6 +136,29 @@ resource "aws_eks_cluster" "this" {
   tags = local.common_tags
 }
 
+# Launch template pins the AMI so node OS patching is explicit and Git-tracked.
+# create_before_destroy ensures a new template version exists before EKS
+# starts the rolling node replacement, avoiding a window with no valid template.
+resource "aws_launch_template" "eks_node" {
+  count       = var.create_eks ? 1 : 0
+  name_prefix = "${local.name}-node-"
+  image_id    = local.eks_node_ami_id
+
+  # Custom AMIs require an explicit bootstrap call; EKS no longer injects it.
+  user_data = base64encode(templatefile("${path.module}/templates/eks-userdata.sh.tpl", {
+    cluster_name = aws_eks_cluster.this[0].name
+  }))
+
+  tag_specifications {
+    resource_type = "instance"
+    tags          = merge(local.common_tags, { Name = "${local.name}-node" })
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 resource "aws_eks_node_group" "default" {
   count = var.create_eks ? 1 : 0
 
@@ -133,6 +169,17 @@ resource "aws_eks_node_group" "default" {
 
   instance_types = var.eks_node_instance_types
   capacity_type  = "ON_DEMAND"
+
+  launch_template {
+    id      = aws_launch_template.eks_node[0].id
+    version = aws_launch_template.eks_node[0].latest_version
+  }
+
+  # Replace exactly 1 node at a time so PDBs (minAvailable: 1) can always
+  # keep at least one pod alive during drain — the core zero-downtime guarantee.
+  update_config {
+    max_unavailable = 1
+  }
 
   scaling_config {
     min_size     = var.eks_node_min_size

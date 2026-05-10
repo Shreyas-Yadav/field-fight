@@ -1,0 +1,56 @@
+name: packer-build
+
+on:
+  workflow_dispatch: # manual trigger for demo and on-demand patching
+  schedule:
+    - cron: "0 2 * * 0" # weekly Sunday 2 AM — security hygiene cadence
+
+jobs:
+  build-ami:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to commit the new AMI ID back to the repo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-packer@main
+        with:
+          version: "1.11.0"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Packer init
+        run: packer init packer/eks-node.pkr.hcl
+
+      - name: Build AMI
+        id: build
+        run: |
+          OUTPUT=$(packer build -machine-readable packer/eks-node.pkr.hcl)
+          echo "$OUTPUT"
+          AMI_ID=$(echo "$OUTPUT" | grep 'artifact,0,id' | tail -1 | cut -d: -f2)
+          echo "ami_id=$AMI_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Commit new AMI ID to Terraform config (GitOps)
+        run: |
+          # Overwrite packer.auto.tfvars with the new AMI ID.
+          # This is the GitOps pattern: Git is the source of truth for which
+          # AMI version is deployed. Rollback = git revert + terraform apply.
+          cat > terraform/environments/dev/packer.auto.tfvars <<EOF
+          # Managed by the packer-build GitHub Actions workflow.
+          # Empty = Terraform resolves the latest EKS-optimized AMI from AWS SSM.
+          # Set to a Packer-built AMI ID to pin nodes to a patched golden image.
+          eks_node_ami_id = "${{ steps.build.outputs.ami_id }}"
+          EOF
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add terraform/environments/dev/packer.auto.tfvars
+          git commit -m "chore(infra): promote patched EKS AMI ${{ steps.build.outputs.ami_id }}"
+          git push

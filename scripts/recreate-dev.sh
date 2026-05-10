@@ -29,6 +29,7 @@ Usage:
   scripts/recreate-dev.sh finish
   scripts/recreate-dev.sh stop
   scripts/recreate-dev.sh start
+  scripts/recreate-dev.sh patch
 
 Environment:
   TF_VAR_db_password    required
@@ -60,6 +61,11 @@ Notes:
     skips DNS delegation and image rebuilds.
   - "start" resumes work after a stop: rebuilds EKS, reinstalls Argo CD,
     applies secrets, syncs the app, and rewires Route53 aliases.
+  - "patch" Day 2 demo: builds a patched EKS golden AMI with Packer locally,
+    writes the new AMI ID to packer.auto.tfvars, and runs terraform apply to
+    trigger a rolling node replacement (one node at a time, respecting PDBs).
+    Requires packer in PATH. For automated patching use the packer-build
+    GitHub Actions workflow instead.
 EOF
 }
 
@@ -871,6 +877,76 @@ phase_secrets() {
   echo "============================================================"
 }
 
+phase_patch() {
+  # Day 2 demo: build a patched golden AMI with Packer, record it in Git,
+  # and roll nodes one-at-a-time via terraform apply.
+  need_cmd packer
+  need_cmd terraform
+  ensure_env
+
+  echo "Building patched EKS AMI with Packer..."
+  cd "$ROOT"
+  packer init packer/eks-node.pkr.hcl
+
+  local ami_id
+  ami_id=$(packer build -machine-readable packer/eks-node.pkr.hcl \
+    | grep 'artifact,0,id' | tail -1 | cut -d: -f2)
+
+  if [[ -z "$ami_id" ]]; then
+    echo "Packer build did not produce an AMI ID. Check the output above." >&2
+    exit 1
+  fi
+
+  echo "New AMI: $ami_id"
+  echo "Writing to terraform/environments/dev/packer.auto.tfvars..."
+
+  cat > "$DEV_DIR/packer.auto.tfvars" <<EOF
+# Managed by the packer-build GitHub Actions workflow.
+# Empty = Terraform resolves the latest EKS-optimized AMI from AWS SSM.
+# Set to a Packer-built AMI ID to pin nodes to a patched golden image.
+eks_node_ami_id = "$ami_id"
+EOF
+
+  local account_id role_arn
+  account_id="$(aws sts get-caller-identity --query Account --output text)"
+  role_arn="arn:aws:iam::${account_id}:role/${LAB_ROLE_NAME}"
+
+  init_dev_backend
+  apply_tf "$DEV_DIR" \
+    -var="aws_region=${AWS_REGION}" \
+    -var="create_eks=true" \
+    -var="install_argocd=true" \
+    -var="install_aws_load_balancer_controller=true" \
+    -var="create_route53_zone=true" \
+    -var="create_frontend_certificate=true" \
+    -var="create_grafana_certificate=true" \
+    -var="validate_frontend_certificate=true" \
+    -var="validate_grafana_certificate=true" \
+    -var="validate_additional_certificates=true" \
+    -var="eks_cluster_role_arn=${role_arn}" \
+    -var="eks_node_role_arn=${role_arn}" \
+    -var="eks_node_instance_types=[\"${EKS_NODE_TYPE}\"]" \
+    -var="eks_node_desired_size=${EKS_NODE_DESIRED_SIZE}" \
+    -var="eks_node_max_size=${EKS_NODE_MAX_SIZE}"
+
+  echo
+  echo "============================================================"
+  echo "  PHASE 'patch' — nodes rolling to patched AMI"
+  echo "============================================================"
+  echo "  New AMI: $ami_id"
+  echo
+  echo "  Watch rolling replacement:"
+  echo "       kubectl get nodes -w"
+  echo
+  echo "  Verify zero dropped requests:"
+  echo "       bash scripts/dev-status.sh"
+  echo
+  echo "  Rollback (if needed):"
+  echo "       git revert HEAD  # reverts packer.auto.tfvars"
+  echo "       $0 patch         # re-runs apply with the old AMI"
+  echo "============================================================"
+}
+
 main() {
   local mode="${1:-}"
 
@@ -898,6 +974,9 @@ main() {
       ;;
     start)
       phase_start
+      ;;
+    patch)
+      phase_patch
       ;;
     -h|--help|help|"")
       usage

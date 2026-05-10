@@ -171,6 +171,12 @@ variable "eks_node_max_size" {
   default     = 4
 }
 
+variable "eks_node_ami_id" {
+  description = "Custom AMI ID built by Packer. Empty = resolve latest EKS-optimized AMI from AWS SSM at plan time."
+  type        = string
+  default     = ""
+}
+
 variable "install_argocd" {
   description = "Install Argo CD into the EKS cluster."
   type        = bool
