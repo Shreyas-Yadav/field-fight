@@ -118,9 +118,9 @@ variable "db_deletion_protection" {
 }
 
 variable "db_skip_final_snapshot" {
-  description = "Skip final snapshot when deleting dev RDS."
+  description = "Skip final snapshot when deleting RDS. Set to true only in dev via project.auto.tfvars."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "create_eks" {
