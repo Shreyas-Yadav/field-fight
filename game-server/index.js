@@ -45,6 +45,12 @@ const gameRoomLifetimeSeconds = new client.Histogram({
   registers: [register],
 });
 
+const gameRoomsExpiredTotal = new client.Counter({
+  name: 'game_rooms_expired_total',
+  help: 'Waiting rooms evicted by the TTL cleanup interval',
+  registers: [register],
+});
+
 let io; // declared before rooms so collect() closure can reference io
 
 const gamePlayersOnline = new client.Gauge({
@@ -58,6 +64,9 @@ const gamePlayersOnline = new client.Gauge({
 
 // roomId → { players: [socketId, socketId?], createdAt: timestamp }
 const rooms = new Map();
+
+const ROOM_TTL_MS = parseInt(process.env.ROOM_TTL_MS || '600000', 10); // 10 min default
+const MAX_ROOMS   = parseInt(process.env.MAX_ROOMS   || '100',    10);
 
 // Register the /metrics handler BEFORE constructing new Server()
 const httpServer = createServer((req, res) => {
@@ -91,6 +100,11 @@ io.on('connection', (socket) => {
 
   socket.on('create_room', () => {
     try {
+      if (rooms.size >= MAX_ROOMS) {
+        socket.emit('room_error', { message: 'Server is at capacity. Try again shortly.' });
+        logger.warn({ socketId: socket.id, rooms: rooms.size }, 'MAX_ROOMS reached, rejecting create_room');
+        return;
+      }
       const roomId = randomUUID().slice(0, 6).toUpperCase();
       const createdAt = Date.now();
       rooms.set(roomId, { players: [socket.id], createdAt });
@@ -176,6 +190,24 @@ io.on('connection', (socket) => {
     logger.error({ err, socketId: socket.id, roomId: socket.data.roomId }, 'Socket error');
   });
 });
+
+const CLEANUP_INTERVAL_MS = Math.min(ROOM_TTL_MS / 2, 60_000);
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, room] of rooms) {
+    if (room.players.length === 1 && now - room.createdAt > ROOM_TTL_MS) {
+      const [waitingSocketId] = room.players;
+      io.to(waitingSocketId).emit('room_expired', { roomId });
+      const lifetimeSeconds = (now - room.createdAt) / 1000;
+      gameRoomLifetimeSeconds.observe(lifetimeSeconds);
+      rooms.delete(roomId);
+      gameRoomsExpiredTotal.inc();
+      logger.info({ roomId, lifetimeSeconds }, 'Waiting room expired by TTL cleanup');
+    }
+  }
+  gameRoomsActive.set(rooms.size);
+}, CLEANUP_INTERVAL_MS);
 
 io.engine.on('connection_error', (err) => {
   logger.error({ err }, 'Engine connection error');
