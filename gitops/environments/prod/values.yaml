@@ -20,7 +20,7 @@ imageTag: 467f4bcc10fff206f5491f422f80d8323292679b
 #      returns to blue (still running old version) within seconds.
 blueGreen:
   enabled: true
-  activeColor: blue
+  activeColor: green
   standbyReplicas: 1
   tags:
     blue: 3bfcd5999caab21997c579e61b8f72cd5cbd5d78
