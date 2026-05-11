@@ -4,7 +4,7 @@
 # When blue/green is enabled, app pods get their tag from
 # `blueGreen.tags.{blue,green}` instead, so this field only really matters
 # for the migration Job in prod.
-imageTag: 274d7e8fe744af40bc2cf66724f9af7e700baa0d
+imageTag: b505bad670185f098e95258dc99a0bb451726b72
 
 # Phase 6: Blue/Green for prod only.
 #
@@ -20,7 +20,7 @@ imageTag: 274d7e8fe744af40bc2cf66724f9af7e700baa0d
 #      returns to blue (still running old version) within seconds.
 blueGreen:
   enabled: true
-  activeColor: blue
+  activeColor: green
   standbyReplicas: 1
   tags:
     blue: 274d7e8fe744af40bc2cf66724f9af7e700baa0d
