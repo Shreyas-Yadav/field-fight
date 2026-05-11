@@ -59,6 +59,7 @@ build {
       # Bake in htop for node observability — demonstrates golden AMI
       # carries custom tooling beyond security patches.
       "sudo dnf install -y htop",
+      "sudo dnf install -y net-tools"
     ]
   }
 }
