@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'frontend/**'
+      - 'game-server/**'
+      - 'auth-service/**'
+      - 'leaderboard-api/**'
+      - 'match-history-service/**'
+      - 'migrations/**'
+      - 'k8s/**'
+      - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
 permissions:
