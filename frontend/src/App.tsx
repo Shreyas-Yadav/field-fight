@@ -65,7 +65,7 @@ export default function App() {
   const { engineRef, renderRef }                                = useEngine(canvasRef);
   const { activeMagnetsRef, spawnMagnet, removeBodies, resetMagnets, snapPositions } = useMagnets(engineRef);
   const { spawnExplosion }                                       = useParticles(renderRef);
-  const { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame, forceWin } =
+  const { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame, forceWin, syncHands } =
     useGame(engineRef, activeMagnetsRef, spawnMagnet, removeBodies, spawnExplosion);
 
   useMagnetForce(engineRef, activeMagnetsRef, strengthRef, fieldRadiusRef);
@@ -160,18 +160,19 @@ export default function App() {
     const positions = activeMagnetsRef.current.map(b => ({
       id: b.id, x: b.position.x, y: b.position.y,
     }));
-    socket.emit('sync_state', { positions });
+    socket.emit('sync_state', { positions, hands });
   }, [phase, gameMode, socket, activeMagnetsRef]);
 
   // ── State sync: receive opponent positions ────────────────────────────────
   useEffect(() => {
     if (!socket || gameMode !== 'remote') return;
-    const onStateSync = ({ positions }: { positions: { id: number; x: number; y: number }[] }) => {
+    const onStateSync = ({ positions, hands: syncedHands }: { positions: { id: number; x: number; y: number }[]; hands?: [number, number] }) => {
       snapPositions(positions);
+      if (syncedHands) syncHands(syncedHands);
     };
     socket.on('state_sync', onStateSync);
     return () => { socket.off('state_sync', onStateSync); };
-  }, [socket, gameMode, snapPositions]);
+  }, [socket, gameMode, snapPositions, syncHands]);
 
   // ── Remote: emit game_over so opponent knows the game ended ───────────────
   useEffect(() => {
