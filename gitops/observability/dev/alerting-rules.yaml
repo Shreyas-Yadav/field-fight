@@ -51,7 +51,7 @@ spec:
         - alert: PodCrashLooping
           expr: |
             rate(kube_pod_container_status_restarts_total{namespace=~"field-fight-.*"}[15m]) > 0
-          for: 5m
+          for: 30s
           labels:
             severity: critical
           annotations:
@@ -68,6 +68,39 @@ spec:
           annotations:
             summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} not ready"
             description: "Pod has been not-ready for 10 minutes."
+
+        # ---- Demo alerts (low thresholds, fire immediately) ----
+        - alert: DemoHighMemory
+          expr: |
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 55
+          for: 0s
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory on {{ $labels.instance }}"
+            description: "Memory usage is at {{ $value | humanize }}% (threshold: 55%)."
+
+        - alert: DemoHighCPU
+          expr: |
+            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 10
+          for: 0s
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU on {{ $labels.instance }}"
+            description: "CPU usage is at {{ $value | humanize }}% (threshold: 10%)."
+
+        # ---- Demo alert (easy to trigger) ----
+        - alert: PodImagePullError
+          expr: |
+            kube_pod_container_status_waiting_reason{namespace=~"field-fight-.*",
+              reason=~"ImagePullBackOff|ErrImagePull"} > 0
+          for: 0s
+          labels:
+            severity: critical
+          annotations:
+            summary: "Image pull error: {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: "Container {{ $labels.container }} cannot pull its image. Check the image tag."
 
         # ---- App health ----
         - alert: AppHigh5xx
