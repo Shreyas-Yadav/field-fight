@@ -70,6 +70,7 @@ app.get('/matches', async (req, res, next) => {
               p1_id AS "p1Id",
               p1_name AS "p1Name",
               winner,
+              winner_name AS "winnerName",
               game_mode AS "gameMode",
               p0_moves AS "p0Moves",
               p1_moves AS "p1Moves",
@@ -98,6 +99,7 @@ app.get('/matches/player/:playerId', async (req, res, next) => {
               p1_id AS "p1Id",
               p1_name AS "p1Name",
               winner,
+              winner_name AS "winnerName",
               game_mode AS "gameMode",
               p0_moves AS "p0Moves",
               p1_moves AS "p1Moves",
@@ -126,16 +128,21 @@ app.post('/matches', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
+    const resolvedP0Name = p0Name ?? 'ALPHA';
+    const resolvedP1Name = p1Name ?? 'BRAVO';
+    const winnerName = winner === 0 ? resolvedP0Name : resolvedP1Name;
+
     const { rows } = await pool.query(
-      `INSERT INTO matches (p0_id, p0_name, p1_id, p1_name, winner, game_mode, p0_moves, p1_moves, duration_seconds)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO matches (p0_id, p0_name, p1_id, p1_name, winner, winner_name, game_mode, p0_moves, p1_moves, duration_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         p0Id ?? null,
-        p0Name ?? 'ALPHA',
+        resolvedP0Name,
         p1Id ?? null,
-        p1Name ?? 'BRAVO',
+        resolvedP1Name,
         winner,
+        winnerName,
         gameMode,
         p0Moves ?? 0,
         p1Moves ?? 0,
