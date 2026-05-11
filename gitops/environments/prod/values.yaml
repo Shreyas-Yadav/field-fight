@@ -88,4 +88,4 @@ ingress:
   groupName: field-fight
   annotations:
     # Give the ALB time to deregister pods before they're killed during cutover.
-    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+    alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=86400,deregistration_delay.timeout_seconds=30

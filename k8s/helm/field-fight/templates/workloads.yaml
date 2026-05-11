@@ -114,6 +114,7 @@ metadata:
     app.kubernetes.io/component: {{ $serviceName | quote }}
 spec:
   type: ClusterIP
+  sessionAffinity: {{ $service.sessionAffinity | default "None" }}
   selector:
     {{- include "field-fight.selectorLabels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $serviceName | quote }}
