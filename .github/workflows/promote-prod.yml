@@ -12,6 +12,10 @@ on:
       tag:
         description: "Image tag (git SHA) to promote to prod. Leave blank to use current UAT tag."
         required: false
+      auto_flip:
+        description: "Automatically flip activeColor after updating standby tag? (true/false)"
+        required: false
+        default: "true"
 
 permissions:
   contents: write
@@ -61,6 +65,16 @@ jobs:
           standby_color="$( [[ "$active_color" == "blue" ]] && echo green || echo blue )"
           echo "Active: ${active_color} — updating standby (${standby_color}) to ${PROMOTE_TAG}"
           sed -i "s/^\(\s*${standby_color}:\s*\).*/\1${PROMOTE_TAG}/" gitops/environments/prod/values.yaml
+
+          # Auto-flip: update activeColor to standby in the same commit.
+          # Safe because Kubernetes readiness probes prevent traffic reaching
+          # pods that aren't ready yet — the old standby pods serve until
+          # the new ones pass their health checks.
+          auto_flip="${{ inputs.auto_flip }}"
+          if [[ "${auto_flip}" == "true" || "${{ github.event_name }}" == "push" ]]; then
+            sed -i "s/^\(\s*activeColor:\s*\).*/\1${standby_color}/" gitops/environments/prod/values.yaml
+            echo "Auto-flipped activeColor to ${standby_color}"
+          fi
 
           short_sha="${PROMOTE_TAG::7}"
           git config user.name "github-actions[bot]"
