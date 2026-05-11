@@ -155,6 +155,29 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('game_over', ({ winner }) => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit('opponent_game_over', { winner });
+      logger.info({ roomId, winner }, 'Game over relayed to opponent');
+    } catch (err) {
+      gameSocketErrorsTotal.inc();
+      logger.error({ err, socketId: socket.id }, 'Error in game_over');
+    }
+  });
+
+  socket.on('player_name', ({ name }) => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit('opponent_name', { name });
+    } catch (err) {
+      gameSocketErrorsTotal.inc();
+      logger.error({ err, socketId: socket.id }, 'Error in player_name');
+    }
+  });
+
   socket.on('sync_state', (data) => {
     try {
       const roomId = socket.data.roomId;

@@ -15,6 +15,7 @@ export interface GameControls {
   winner:                0 | 1 | null;
   placeForActivePlayer:  (x: number, y: number) => void;
   resetGame:             () => void;
+  forceWin:              (w: 0 | 1) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -222,5 +223,11 @@ export function useGame(
     setWinner(null);
   }, []);
 
-  return { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame };
+  const forceWin = useCallback((w: 0 | 1) => {
+    if (phaseRef.current === GamePhase.WIN) return;
+    setWinner(w);
+    setPhase(GamePhase.WIN);
+  }, [phaseRef, setPhase]);
+
+  return { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame, forceWin };
 }

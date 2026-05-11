@@ -43,6 +43,7 @@ export default function App() {
   const [remoteStep,       setRemoteStep]       = useState<RemoteStep>(null);
   const [remoteError,      setRemoteError]      = useState('');
   const [disconnectNotice, setDisconnectNotice] = useState(false);
+  const [opponentName,     setOpponentName]     = useState('OPPONENT');
 
   // ── Leaderboard ───────────────────────────────────────────────────────────
   const [scores, setScores] = useState<ScoreRow[]>([]);
@@ -64,7 +65,7 @@ export default function App() {
   const { engineRef, renderRef }                                = useEngine(canvasRef);
   const { activeMagnetsRef, spawnMagnet, removeBodies, resetMagnets, snapPositions } = useMagnets(engineRef);
   const { spawnExplosion }                                       = useParticles(renderRef);
-  const { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame } =
+  const { phase, phaseRef, activePlayer, hands, winner, placeForActivePlayer, resetGame, forceWin } =
     useGame(engineRef, activeMagnetsRef, spawnMagnet, removeBodies, spawnExplosion);
 
   useMagnetForce(engineRef, activeMagnetsRef, strengthRef, fieldRadiusRef);
@@ -172,6 +173,30 @@ export default function App() {
     return () => { socket.off('state_sync', onStateSync); };
   }, [socket, gameMode, snapPositions]);
 
+  // ── Remote: emit game_over so opponent knows the game ended ───────────────
+  useEffect(() => {
+    if (phase !== GamePhase.WIN || winner === null || !socket || gameMode !== 'remote') return;
+    socket.emit('game_over', { winner });
+  }, [phase, winner, socket, gameMode]);
+
+  // ── Remote: opponent signals game over ────────────────────────────────────
+  useEffect(() => {
+    if (!socket || gameMode !== 'remote') return;
+    const onOpponentGameOver = ({ winner: w }: { winner: 0 | 1 }) => {
+      forceWin(w);
+    };
+    socket.on('opponent_game_over', onOpponentGameOver);
+    return () => { socket.off('opponent_game_over', onOpponentGameOver); };
+  }, [socket, gameMode, forceWin]);
+
+  // ── Remote: receive opponent's display name ───────────────────────────────
+  useEffect(() => {
+    if (!socket || gameMode !== 'remote') return;
+    const onOpponentName = ({ name }: { name: string }) => setOpponentName(name.toUpperCase());
+    socket.on('opponent_name', onOpponentName);
+    return () => { socket.off('opponent_name', onOpponentName); };
+  }, [socket, gameMode]);
+
   // ── Socket: persistent listeners ─────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
@@ -182,6 +207,7 @@ export default function App() {
       setGameStarted(true);
       setRemoteStep(null);
       setRemoteError('');
+      socket.emit('player_name', { name: user?.name?.toUpperCase() ?? 'COMMANDER' });
     };
     const onOpponentDisconnected = () => setDisconnectNotice(true);
     socket.on('game_start', onGameStart);
@@ -242,6 +268,7 @@ export default function App() {
     setSocket(null); setPlayerIndex(null); setRoomId('');
     setRemoteStep('menu'); setDisconnectNotice(false); setRemoteError(''); setJoinInput('');
     gameStartedRef.current = false; setGameStarted(false); setScores([]);
+    setOpponentName('OPPONENT');
   }, [resetMagnets, resetGame, socket]);
 
   const handleLeaveGame = useCallback(() => {
@@ -250,6 +277,7 @@ export default function App() {
     setSocket(null); setPlayerIndex(null); setRoomId('');
     setRemoteStep('menu'); setDisconnectNotice(false); setRemoteError(''); setJoinInput('');
     gameStartedRef.current = false; setGameStarted(false); setScores([]);
+    setOpponentName('OPPONENT');
   }, [resetMagnets, resetGame, socket]);
 
   const handleReset = useCallback(() => {
@@ -313,12 +341,19 @@ export default function App() {
   const localName = user?.name?.toUpperCase() ?? 'COMMANDER';
   const p0DisplayName =
     gameMode === 'remote'
-      ? (playerIndex === 0 ? localName : undefined)
+      ? (playerIndex === 0 ? localName : opponentName)
       : localName;
   const p1DisplayName =
     gameMode === 'human-vs-bot'   ? 'AI UNIT'
-    : gameMode === 'remote' && playerIndex === 1 ? localName
-    : undefined;
+    : gameMode === 'remote'       ? (playerIndex === 1 ? localName : opponentName)
+    : localName;
+
+  const winnerName = winner !== null
+    ? (gameMode === 'remote'
+        ? (winner === playerIndex ? localName : opponentName)
+        : winner === 0 ? localName
+        : gameMode === 'human-vs-bot' ? 'AI UNIT' : localName)
+    : '';
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (!authLoading && !isAuthenticated) {
@@ -435,6 +470,7 @@ export default function App() {
             {phase === GamePhase.WIN && winner !== null && !disconnectNotice && (
               <WinOverlay
                 winner={winner} gameMode={gameMode} playerIndex={playerIndex}
+                winnerName={winnerName}
                 scores={scores} onPlayAgain={handleReset}
                 onViewHistory={() => setShowHistory(true)}
               />
@@ -705,13 +741,13 @@ export default function App() {
 
 // ── WinOverlay ────────────────────────────────────────────────────────────────
 function WinOverlay({
-  winner, gameMode, playerIndex, scores, onPlayAgain, onViewHistory,
+  winner, gameMode, playerIndex, winnerName, scores, onPlayAgain, onViewHistory,
 }: {
   winner: 0 | 1; gameMode: GameMode; playerIndex: 0 | 1 | null;
+  winnerName: string;
   scores: ScoreRow[]; onPlayAgain: () => void; onViewHistory: () => void;
 }) {
   const c   = PLAYER_COLORS[winner];
-  const uid = PLAYER_UIDS[winner];
   const isVic = gameMode !== 'remote' || winner === playerIndex;
 
   return (
@@ -746,15 +782,12 @@ function WinOverlay({
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: '.4em', color: 'var(--text-dim)', marginBottom: 4 }}>
-            UNIT
-          </div>
           <div style={{
-            fontFamily: 'var(--font-display)', fontSize: 80, lineHeight: 1,
+            fontFamily: 'var(--font-display)', fontSize: winnerName.length > 8 ? 52 : 72, lineHeight: 1,
             letterSpacing: '.06em', color: c,
             textShadow: `0 0 30px ${c}, 0 0 80px ${c}55`,
           }}>
-            {uid}
+            {winnerName}
           </div>
           <div style={{
             fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 600,
