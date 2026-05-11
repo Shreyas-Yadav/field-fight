@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react';
 
 interface Match {
   id: number;
-  p0_id: string | null;
-  p0_name: string;
-  p1_id: string | null;
-  p1_name: string;
+  p0Id: string | null;
+  p0Name: string;
+  p1Id: string | null;
+  p1Name: string;
   winner: 0 | 1;
-  game_mode: string;
-  p0_moves: number;
-  p1_moves: number;
+  gameMode: string;
+  p0Moves: number;
+  p1Moves: number;
   durationSeconds: number;
-  created_at: string;
+  createdAt: string;
 }
 
 const PLAYER_COLORS = ['#ff4455', '#00d4ff'] as const;
@@ -51,7 +51,7 @@ export function MatchHistory({
     setLoading(true);
     setError('');
     const url = myOnly && userId
-      ? `/matches/player/${userId}?limit=30`
+      ? `/matches/player/${encodeURIComponent(userId)}?limit=30`
       : '/matches?limit=30';
     fetch(url)
       .then(r => { if (!r.ok) throw new Error('fetch failed'); return r.json(); })
@@ -179,16 +179,16 @@ export function MatchHistory({
                   onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = i % 2 === 0 ? 'rgba(12,16,24,0.6)' : 'transparent'; }}
                 >
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                    {formatDate(m.created_at)}
+                    {formatDate(m.createdAt)}
                   </span>
                   <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, letterSpacing: '.08em', color: m.winner === 0 ? PLAYER_COLORS[0] : 'var(--text-primary)' }}>
-                    {m.p0_name}
+                    {m.p0Name}
                   </span>
                   <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, letterSpacing: '.08em', color: m.winner === 1 ? PLAYER_COLORS[1] : 'var(--text-primary)' }}>
-                    {m.p1_name}
+                    {m.p1Name}
                   </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)', letterSpacing: '.1em' }}>
-                    {modeLabel(m.game_mode)}
+                    {modeLabel(m.gameMode)}
                   </span>
                   <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: winnerColor, textShadow: `0 0 8px ${winnerColor}88`, letterSpacing: '.1em' }}>
                     {PLAYER_UIDS[m.winner]}
@@ -197,7 +197,7 @@ export function MatchHistory({
                     {formatDuration(m.durationSeconds)}
                   </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                    {m.p0_moves + m.p1_moves}
+                    {m.p0Moves + m.p1Moves}
                   </span>
                 </div>
               );
